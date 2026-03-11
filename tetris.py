@@ -2,12 +2,15 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 1.1.0
+Version: 1.2.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
   - Sound effects
   - High score system
+  - Line clear animations
+  - Level up effects
+  - Multiple game themes
 """
 
 import pygame
@@ -67,6 +70,56 @@ SHAPES = {
     'L': [[0, 0, 1],
           [1, 1, 1]],
 }
+
+# 游戏主题配置
+THEMES = {
+    'classic': {
+        'name': '经典',
+        'bg_color': (0, 0, 0),
+        'grid_color': (64, 64, 64),
+        'grid_line_color': (40, 40, 40),
+        'ui_bg': (0, 0, 0),
+        'text_color': (255, 255, 255),
+        'accent_color': (255, 215, 0),
+        'block_style': 'gradient',
+    },
+    'dark': {
+        'name': '暗黑',
+        'bg_color': (20, 20, 30),
+        'grid_color': (30, 30, 45),
+        'grid_line_color': (40, 40, 60),
+        'ui_bg': (20, 20, 30),
+        'text_color': (200, 200, 220),
+        'accent_color': (255, 100, 100),
+        'block_style': 'flat',
+    },
+    'light': {
+        'name': '明亮',
+        'bg_color': (240, 240, 250),
+        'grid_color': (200, 200, 220),
+        'grid_line_color': (180, 180, 200),
+        'ui_bg': (240, 240, 250),
+        'text_color': (40, 40, 60),
+        'accent_color': (255, 140, 0),
+        'block_style': 'outline',
+    },
+    'neon': {
+        'name': '霓虹',
+        'bg_color': (10, 10, 30),
+        'grid_color': (20, 20, 50),
+        'grid_line_color': (50, 50, 100),
+        'ui_bg': (10, 10, 30),
+        'text_color': (0, 255, 255),
+        'accent_color': (255, 0, 255),
+        'block_style': 'neon',
+    },
+}
+
+# 消行动画帧数
+CLEAR_ANIMATION_FRAMES = 15
+
+# 升级动画帧数
+LEVELUP_ANIMATION_FRAMES = 60
 
 # 关卡配置 (速度，每关消除行数要求)
 LEVELS = [
@@ -307,7 +360,7 @@ class GameBoard:
                         self.grid[board_y][board_x] = block.color
 
     def clear_lines(self):
-        """清除满行并返回消除的行数"""
+        """清除满行并返回消除的行数（保留用于兼容）"""
         lines_cleared = 0
         y = GRID_HEIGHT - 1
         while y >= 0:
@@ -347,8 +400,18 @@ class TetrisGame:
         self.sound_manager = SoundManager()
         self.high_score_manager = HighScoreManager()
 
+        # 当前主题
+        self.current_theme_name = 'classic'
+        self.current_theme = THEMES['classic']
+
         self.clock = pygame.time.Clock()
         self.reset_game()
+
+        # 动画状态
+        self.clearing_lines = []  # 正在消除的行
+        self.clear_animation_frame = 0
+        self.levelup_animation_frame = 0
+        self.levelup_animation_text = ""
 
     def _load_font(self, size):
         """加载字体，优先使用支持中文的字体"""
@@ -380,6 +443,10 @@ class TetrisGame:
         self.last_fall_time = pygame.time.get_ticks()
         self.running = True
         self.new_high_score = False  # 标记是否创造新高分
+        self.clearing_lines = []
+        self.clear_animation_frame = 0
+        self.levelup_animation_frame = 0
+        self.levelup_animation_text = ""
 
     def spawn_block(self):
         """生成新方块"""
@@ -435,9 +502,32 @@ class TetrisGame:
     def lock_current_block(self):
         """锁定当前方块"""
         self.board.lock_block(self.current_block)
-        lines = self.board.clear_lines()
+        lines = self._get_full_lines()
 
-        if lines > 0:
+        if lines:
+            self.clearing_lines = lines
+            self.clear_animation_frame = 0
+            # 不立即消除，等待动画完成
+        else:
+            self.spawn_block()
+
+    def _get_full_lines(self):
+        """获取所有满行的索引"""
+        full_lines = []
+        for y in range(GRID_HEIGHT):
+            if all(self.board.grid[y]):
+                full_lines.append(y)
+        return full_lines
+
+    def _clear_lines_with_animation(self):
+        """执行消行动画并消除行"""
+        if self.clear_animation_frame >= CLEAR_ANIMATION_FRAMES:
+            # 动画完成，实际消除行
+            for y in sorted(self.clearing_lines, reverse=True):
+                del self.board.grid[y]
+                self.board.grid.insert(0, [None for _ in range(GRID_WIDTH)])
+
+            lines = len(self.clearing_lines)
             self.lines_cleared += lines
             self.level_lines += lines
 
@@ -451,7 +541,11 @@ class TetrisGame:
             # 检查升级
             self._check_level_up()
 
-        self.spawn_block()
+            self.clearing_lines = []
+            self.clear_animation_frame = 0
+            self.spawn_block()
+        else:
+            self.clear_animation_frame += 1
 
     def _check_level_up(self):
         """检查是否升级"""
@@ -460,11 +554,104 @@ class TetrisGame:
             if self.level_index < len(LEVELS) - 1:
                 self.level_index += 1
                 self.level_lines = 0
+                self.levelup_animation_frame = 0
+                self.levelup_animation_text = f"关卡 {self.level_index} - {LEVELS[self.level_index]['name']}"
                 self.sound_manager.play('levelup')  # 播放升级音效
 
     def get_current_speed(self):
         """获取当前下落速度"""
         return LEVELS[self.level_index]['speed']
+
+    def _draw_block_cell(self, draw_x, draw_y, color):
+        """绘制单个方块单元格，根据主题使用不同风格"""
+        theme = self.current_theme
+        style = theme.get('block_style', 'gradient')
+
+        if style == 'flat':
+            # 扁平风格
+            pygame.draw.rect(self.screen, color,
+                           (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2))
+        elif style == 'outline':
+            # 轮廓风格
+            pygame.draw.rect(self.screen, color,
+                           (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2), 2)
+            pygame.draw.rect(self.screen, color,
+                           (draw_x + 4, draw_y + 4, BLOCK_SIZE - 8, BLOCK_SIZE - 8))
+        elif style == 'neon':
+            # 霓虹风格 - 带发光效果
+            pygame.draw.rect(self.screen, color,
+                           (draw_x + 2, draw_y + 2, BLOCK_SIZE - 4, BLOCK_SIZE - 4))
+            # 外发光
+            glow_color = tuple(int(c * 0.5) for c in color)
+            pygame.draw.rect(self.screen, glow_color,
+                           (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2), 1)
+            pygame.draw.rect(self.screen, glow_color,
+                           (draw_x, draw_y, BLOCK_SIZE, BLOCK_SIZE), 1)
+        else:
+            # gradient 风格（默认）
+            pygame.draw.rect(self.screen, color,
+                           (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2))
+            # 高光效果
+            highlight = tuple(min(255, c + 50) for c in color)
+            pygame.draw.line(self.screen, highlight,
+                           (draw_x + 2, draw_y + 2),
+                           (draw_x + BLOCK_SIZE - 3, draw_y + 2), 2)
+            pygame.draw.line(self.screen, highlight,
+                           (draw_x + 2, draw_y + 2),
+                           (draw_x + 2, draw_y + BLOCK_SIZE - 3), 2)
+
+    def _draw_clear_animation(self):
+        """绘制消行动画"""
+        progress = self.clear_animation_frame / CLEAR_ANIMATION_FRAMES
+
+        for y in self.clearing_lines:
+            # 计算闪烁效果
+            alpha = int(255 * (1 - progress))
+            flash_color = (255, 255, 255) if int(progress * 10) % 2 == 0 else (255, 200, 100)
+
+            for x in range(GRID_WIDTH):
+                draw_x = x * BLOCK_SIZE
+                draw_y = y * BLOCK_SIZE
+
+                # 绘制闪烁效果
+                pygame.draw.rect(self.screen, flash_color,
+                               (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2))
+
+                # 粒子效果
+                if progress < 0.5:
+                    for _ in range(3):
+                        px = draw_x + random.randint(2, BLOCK_SIZE - 2)
+                        py = draw_y + random.randint(2, BLOCK_SIZE - 2)
+                        pygame.draw.circle(self.screen, (255, 255, 200), (px, py), 2)
+
+    def _draw_levelup_animation(self):
+        """绘制升级动画"""
+        progress = self.levelup_animation_frame / LEVELUP_ANIMATION_FRAMES
+
+        # 创建半透明覆盖层
+        overlay = pygame.Surface((GRID_WIDTH * BLOCK_SIZE, GRID_HEIGHT * BLOCK_SIZE))
+        overlay.fill(self.current_theme['bg_color'])
+        overlay.set_alpha(int(100 * (1 - abs(progress - 0.5) * 2)))
+        self.screen.blit(overlay, (0, 0))
+
+        # 绘制升级文字
+        text = self.font_large.render(self.levelup_animation_text, True, self.current_theme['accent_color'])
+        text_rect = text.get_rect(center=(GRID_WIDTH * BLOCK_SIZE // 2, GRID_HEIGHT * BLOCK_SIZE // 2))
+
+        # 缩放效果
+        scale = 1 + 0.3 * (1 - abs(progress - 0.5) * 2)
+        scaled_text = pygame.transform.scale(text,
+            (int(text.get_width() * scale), int(text.get_height() * scale)))
+        scaled_rect = scaled_text.get_rect(center=(GRID_WIDTH * BLOCK_SIZE // 2, GRID_HEIGHT * BLOCK_SIZE // 2))
+
+        self.screen.blit(scaled_text, scaled_rect)
+
+        # 粒子效果
+        for _ in range(5):
+            px = random.randint(0, GRID_WIDTH * BLOCK_SIZE)
+            py = random.randint(0, GRID_HEIGHT * BLOCK_SIZE)
+            color = random.choice([(255, 215, 0), (255, 100, 100), (100, 255, 100)])
+            pygame.draw.circle(self.screen, color, (px, py), random.randint(2, 4))
 
     def draw_block(self, block, offset_x=0, offset_y=0, ghost=False):
         """绘制方块"""
@@ -479,32 +666,23 @@ class TetrisGame:
                         pygame.draw.rect(self.screen, block.color,
                                        (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2), 2)
                     else:
-                        # 实体方块 - 带渐变效果
-                        color = block.color if not ghost else tuple(c // 4 for c in block.color)
-                        pygame.draw.rect(self.screen, color,
-                                       (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2))
-                        # 高光效果
-                        highlight = tuple(min(255, c + 50) for c in color)
-                        pygame.draw.line(self.screen, highlight,
-                                       (draw_x + 2, draw_y + 2),
-                                       (draw_x + BLOCK_SIZE - 3, draw_y + 2), 2)
-                        pygame.draw.line(self.screen, highlight,
-                                       (draw_x + 2, draw_y + 2),
-                                       (draw_x + 2, draw_y + BLOCK_SIZE - 3), 2)
+                        # 实体方块 - 使用主题风格
+                        self._draw_block_cell(draw_x, draw_y, block.color)
 
     def draw_grid(self):
         """绘制游戏网格"""
+        theme = self.current_theme
         # 绘制背景
-        pygame.draw.rect(self.screen, DARK_GRAY,
+        pygame.draw.rect(self.screen, theme['grid_color'],
                         (0, 0, GRID_WIDTH * BLOCK_SIZE, GRID_HEIGHT * BLOCK_SIZE))
 
         # 绘制网格线
         for x in range(GRID_WIDTH + 1):
-            pygame.draw.line(self.screen, GRAY,
+            pygame.draw.line(self.screen, theme['grid_line_color'],
                            (x * BLOCK_SIZE, 0),
                            (x * BLOCK_SIZE, GRID_HEIGHT * BLOCK_SIZE))
         for y in range(GRID_HEIGHT + 1):
-            pygame.draw.line(self.screen, GRAY,
+            pygame.draw.line(self.screen, theme['grid_line_color'],
                            (0, y * BLOCK_SIZE),
                            (GRID_WIDTH * BLOCK_SIZE, y * BLOCK_SIZE))
 
@@ -514,32 +692,24 @@ class TetrisGame:
                 if color:
                     draw_x = x * BLOCK_SIZE
                     draw_y = y * BLOCK_SIZE
-                    pygame.draw.rect(self.screen, color,
-                                   (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2))
-                    # 高光效果
-                    highlight = tuple(min(255, c + 50) for c in color)
-                    pygame.draw.line(self.screen, highlight,
-                                   (draw_x + 2, draw_y + 2),
-                                   (draw_x + BLOCK_SIZE - 3, draw_y + 2), 2)
-                    pygame.draw.line(self.screen, highlight,
-                                   (draw_x + 2, draw_y + 2),
-                                   (draw_x + 2, draw_y + BLOCK_SIZE - 3), 2)
+                    self._draw_block_cell(draw_x, draw_y, color)
 
     def draw_ui(self):
         """绘制 UI 信息"""
+        theme = self.current_theme
         ui_x = GRID_WIDTH * BLOCK_SIZE + 20
 
         # 标题
-        title = self.font_large.render('俄罗斯方块', True, WHITE)
+        title = self.font_large.render('俄罗斯方块', True, theme['text_color'])
         self.screen.blit(title, (ui_x, 20))
 
         # 最高分
         high_score = self.high_score_manager.get_high_score()
-        high_score_text = self.font_small.render(f'最高分：{high_score}', True, (255, 215, 0))
+        high_score_text = self.font_small.render(f'最高分：{high_score}', True, theme['accent_color'])
         self.screen.blit(high_score_text, (ui_x, 55))
 
         # 下一个方块
-        next_text = self.font_medium.render('下一个:', True, WHITE)
+        next_text = self.font_medium.render('下一个:', True, theme['text_color'])
         self.screen.blit(next_text, (ui_x, 85))
 
         # 绘制下一个方块预览
@@ -554,21 +724,21 @@ class TetrisGame:
                                     BLOCK_SIZE - 2, BLOCK_SIZE - 2))
 
         # 分数
-        score_text = self.font_medium.render(f'分数：{self.score}', True, WHITE)
+        score_text = self.font_medium.render(f'分数：{self.score}', True, theme['text_color'])
         self.screen.blit(score_text, (ui_x, 220))
 
         # 消除行数
-        lines_text = self.font_medium.render(f'消除：{self.lines_cleared}', True, WHITE)
+        lines_text = self.font_medium.render(f'消除：{self.lines_cleared}', True, theme['text_color'])
         self.screen.blit(lines_text, (ui_x, 260))
 
         # 关卡
         current_level = LEVELS[self.level_index]
-        level_text = self.font_medium.render(f'关卡：{current_level["name"]}', True, WHITE)
+        level_text = self.font_medium.render(f'关卡：{current_level["name"]}', True, theme['text_color'])
         self.screen.blit(level_text, (ui_x, 300))
 
         # 升级进度
         progress = f'{self.level_lines}/{current_level["lines"]}'
-        progress_text = self.font_small.render(f'升级：{progress}', True, WHITE)
+        progress_text = self.font_small.render(f'升级：{progress}', True, theme['text_color'])
         self.screen.blit(progress_text, (ui_x, 340))
 
         # 操作说明
@@ -580,21 +750,23 @@ class TetrisGame:
             '空格 硬降',
             'P 暂停',
             'R 重新开始',
+            'T 切换主题',
         ]
         for i, text in enumerate(controls):
-            rendered = self.font_small.render(text, True, GRAY)
+            rendered = self.font_small.render(text, True, theme['text_color'])
             self.screen.blit(rendered, (ui_x, 380 + i * 25))
 
     def draw_game_over(self):
         """绘制游戏结束画面"""
+        theme = self.current_theme
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.fill(BLACK)
+        overlay.fill(theme['bg_color'])
         overlay.set_alpha(180)
         self.screen.blit(overlay, (0, 0))
 
-        game_over_text = self.font_large.render('游戏结束', True, WHITE)
-        score_text = self.font_medium.render(f'最终分数：{self.score}', True, WHITE)
-        restart_text = self.font_medium.render('按 R 重新开始', True, WHITE)
+        game_over_text = self.font_large.render('游戏结束', True, theme['text_color'])
+        score_text = self.font_medium.render(f'最终分数：{self.score}', True, theme['text_color'])
+        restart_text = self.font_medium.render('按 R 重新开始', True, theme['text_color'])
 
         self.screen.blit(game_over_text,
                         (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2,
@@ -605,7 +777,7 @@ class TetrisGame:
 
         # 显示最高分
         high_score = self.high_score_manager.get_high_score()
-        high_score_text = self.font_small.render(f'最高分：{high_score}', True, WHITE)
+        high_score_text = self.font_small.render(f'最高分：{high_score}', True, theme['text_color'])
         self.screen.blit(high_score_text,
                         (SCREEN_WIDTH // 2 - high_score_text.get_width() // 2,
                          SCREEN_HEIGHT // 2 + 10))
@@ -626,19 +798,20 @@ class TetrisGame:
 
     def draw_pause(self):
         """绘制暂停画面"""
+        theme = self.current_theme
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.fill(BLACK)
+        overlay.fill(theme['bg_color'])
         overlay.set_alpha(120)
         self.screen.blit(overlay, (0, 0))
 
-        pause_text = self.font_large.render('游戏暂停', True, WHITE)
+        pause_text = self.font_large.render('游戏暂停', True, theme['text_color'])
         self.screen.blit(pause_text,
                         (SCREEN_WIDTH // 2 - pause_text.get_width() // 2,
                          SCREEN_HEIGHT // 2))
 
     def draw(self):
         """绘制游戏画面"""
-        self.screen.fill(BLACK)
+        self.screen.fill(self.current_theme['bg_color'])
 
         # 绘制游戏区域
         self.draw_grid()
@@ -653,6 +826,14 @@ class TetrisGame:
 
         # 绘制 UI
         self.draw_ui()
+
+        # 绘制消行动画
+        if self.clearing_lines:
+            self._draw_clear_animation()
+
+        # 绘制升级动画
+        if self.levelup_animation_frame > 0 and self.levelup_animation_frame < LEVELUP_ANIMATION_FRAMES:
+            self._draw_levelup_animation()
 
         # 绘制游戏结束或暂停画面
         if self.game_over:
@@ -673,6 +854,11 @@ class TetrisGame:
                 if event.key == pygame.K_r:
                     self.reset_game()
                     return
+
+                # 主题切换
+                if event.key == pygame.K_t:
+                    self._switch_theme()
+                    continue
 
                 if self.game_over or self.paused:
                     continue
@@ -695,10 +881,27 @@ class TetrisGame:
                 if event.key == pygame.K_p and not self.game_over:
                     self.paused = False
 
+    def _switch_theme(self):
+        """切换游戏主题"""
+        theme_names = list(THEMES.keys())
+        current_index = theme_names.index(self.current_theme_name)
+        next_index = (current_index + 1) % len(theme_names)
+        self.current_theme_name = theme_names[next_index]
+        self.current_theme = THEMES[self.current_theme_name]
+
     def update(self):
         """更新游戏状态"""
         if self.game_over or self.paused:
             return
+
+        # 更新消行动画
+        if self.clearing_lines:
+            self._clear_lines_with_animation()
+            return  # 动画期间不更新其他状态
+
+        # 更新升级动画
+        if self.levelup_animation_frame < LEVELUP_ANIMATION_FRAMES:
+            self.levelup_animation_frame += 1
 
         current_time = pygame.time.get_ticks()
         if current_time - self.last_fall_time > self.get_current_speed():
