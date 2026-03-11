@@ -44,6 +44,8 @@ jobs:
         with:
           files: dist/Tetris.exe
           generate_release_notes: true
+          draft: false
+          prerelease: false
 
   build-macos:
     runs-on: macos-latest
@@ -72,6 +74,15 @@ jobs:
           name: tetris-macos
           path: dist/Tetris
 
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/Tetris
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
   build-linux:
     runs-on: ubuntu-latest
 
@@ -98,3 +109,12 @@ jobs:
         with:
           name: tetris-linux
           path: dist/Tetris
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/Tetris
+          generate_release_notes: true
+          draft: false
+          prerelease: false
