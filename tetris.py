@@ -1,11 +1,20 @@
 """
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
+
+Version: 1.1.0
+Features:
+  - 10 levels with increasing difficulty
+  - Chinese interface
+  - Sound effects
+  - High score system
 """
 
 import pygame
 import random
 import sys
+import os
+import json
 
 # 初始化 pygame
 pygame.init()
@@ -34,6 +43,13 @@ COLORS = {
     'J': (0, 0, 255),        # 蓝色
     'L': (255, 165, 0),      # 橙色
 }
+
+# 音效配置
+SOUND_ENABLED = True
+SOUND_VOLUME = 0.3
+
+# 最高分记录文件
+HIGH_SCORE_FILE = 'highscore.json'
 
 # 方块形状定义
 SHAPES = {
@@ -65,6 +81,178 @@ LEVELS = [
     {'level': 9, 'speed': 200, 'lines': 90, 'name': '传奇'},
     {'level': 10, 'speed': 100, 'lines': 100, 'name': '方块之王'},
 ]
+
+
+class SoundManager:
+    """音效管理器"""
+
+    def __init__(self):
+        self.enabled = SOUND_ENABLED
+        self.sounds = {}
+        self.music_loaded = False
+
+        if self.enabled:
+            pygame.mixer.init()
+            self._init_sounds()
+
+    def _init_sounds(self):
+        """初始化音效（使用程序生成的声音）"""
+        try:
+            # 使用 pygame 生成简单的音效
+            sample_rate = 22050
+
+            # 硬降音效 - 高频短音
+            self.sounds['drop'] = self._generate_sound(400, 0.1, 'square')
+
+            # 消行音效 - 和弦效果
+            self.sounds['clear'] = self._generate_sound(600, 0.2, 'sine')
+
+            # 消多行音效 - 更长的音效
+            self.sounds['clear_multi'] = self._generate_sound(800, 0.3, 'sine')
+
+            # 旋转音效
+            self.sounds['rotate'] = self._generate_sound(300, 0.05, 'sine')
+
+            # 游戏结束音效
+            self.sounds['gameover'] = self._generate_sound(200, 0.5, 'sawtooth')
+
+            # 升级音效
+            self.sounds['levelup'] = self._generate_sound(500, 0.4, 'sine')
+
+            # 设置音量
+            for sound in self.sounds.values():
+                sound.set_volume(SOUND_VOLUME)
+
+        except Exception as e:
+            print(f"音效初始化失败：{e}")
+            self.enabled = False
+
+    def _generate_sound(self, freq, duration, wave_type='sine'):
+        """生成简单音效"""
+        try:
+            sample_rate = 22050
+            n_samples = int(sample_rate * duration)
+            buf = bytes()
+
+            for i in range(n_samples):
+                t = i / sample_rate
+                if wave_type == 'sine':
+                    # 正弦波
+                    value = int(127 * (0.5 * (1 + (2 * t / duration) ** 0.5)) *
+                               (2 * t * freq * 3.14159) % 256)
+                elif wave_type == 'square':
+                    # 方波
+                    value = 255 if (int(t * freq * 2) % 2) == 0 else 0
+                elif wave_type == 'sawtooth':
+                    # 锯齿波
+                    value = int(255 * (t * freq % 1))
+                else:
+                    value = 128
+
+                # 添加包络（淡入淡出）
+                envelope = 1.0
+                if i < n_samples * 0.1:
+                    envelope = i / (n_samples * 0.1)
+                elif i > n_samples * 0.8:
+                    envelope = (n_samples - i) / (n_samples * 0.2)
+
+                value = int(value * envelope)
+                buf += bytes([value])
+
+            # 创建单声道声音
+            sound = pygame.mixer.Sound(buffer=buf)
+            return sound
+        except Exception:
+            # 如果生成失败，返回一个空音效
+            return pygame.mixer.Sound(buffer=bytes([128] * 100))
+
+    def play(self, sound_name):
+        """播放音效"""
+        if self.enabled and sound_name in self.sounds:
+            self.sounds[sound_name].play()
+
+    def play_clear(self, lines):
+        """根据消除行数播放不同音效"""
+        if lines >= 2:
+            self.play('clear_multi')
+        else:
+            self.play('clear')
+
+    def stop_music(self):
+        """停止背景音乐"""
+        if self.enabled:
+            pygame.mixer.music.stop()
+
+
+class HighScoreManager:
+    """最高分记录管理器"""
+
+    def __init__(self):
+        self.high_scores = self._load_high_scores()
+
+    def _get_file_path(self):
+        """获取最高分文件路径"""
+        if getattr(sys, 'frozen', False):
+            # PyInstaller 打包后的路径
+            return os.path.join(os.path.dirname(sys.executable), HIGH_SCORE_FILE)
+        else:
+            # 开发环境路径
+            return os.path.join(os.path.dirname(os.path.abspath(__file__)), HIGH_SCORE_FILE)
+
+    def _load_high_scores(self):
+        """加载最高分记录"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('high_scores', [])
+            else:
+                return []
+        except Exception as e:
+            print(f"加载最高分失败：{e}")
+            return []
+
+    def save_high_scores(self):
+        """保存最高分记录"""
+        try:
+            file_path = self._get_file_path()
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump({'high_scores': self.high_scores}, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"保存最高分失败：{e}")
+            return False
+
+    def add_score(self, score, lines, level):
+        """添加新的分数记录"""
+        entry = {
+            'score': score,
+            'lines': lines,
+            'level': level,
+            'date': pygame.time.get_ticks() // 1000
+        }
+
+        self.high_scores.append(entry)
+
+        # 按分数排序，保留前 10 名
+        self.high_scores.sort(key=lambda x: x['score'], reverse=True)
+        self.high_scores = self.high_scores[:10]
+
+        self.save_high_scores()
+
+        # 返回是否进入排行榜
+        return len(self.high_scores) > 0 and self.high_scores[-1] == entry
+
+    def get_high_scores(self):
+        """获取最高分列表"""
+        return self.high_scores
+
+    def get_high_score(self):
+        """获取最高分"""
+        if self.high_scores:
+            return self.high_scores[0]['score']
+        return 0
 
 
 class Block:
@@ -155,6 +343,10 @@ class TetrisGame:
         self.font_medium = self._load_font(24)
         self.font_small = self._load_font(18)
 
+        # 初始化管理器
+        self.sound_manager = SoundManager()
+        self.high_score_manager = HighScoreManager()
+
         self.clock = pygame.time.Clock()
         self.reset_game()
 
@@ -187,6 +379,7 @@ class TetrisGame:
         self.paused = False
         self.last_fall_time = pygame.time.get_ticks()
         self.running = True
+        self.new_high_score = False  # 标记是否创造新高分
 
     def spawn_block(self):
         """生成新方块"""
@@ -197,6 +390,11 @@ class TetrisGame:
 
         if not self.board.is_valid_position(self.current_block):
             self.game_over = True
+            self.sound_manager.play('gameover')  # 播放游戏结束音效
+            # 记录最高分
+            self.high_score_manager.add_score(self.score, self.lines_cleared, self.level_index + 1)
+            if self.score > self.high_score_manager.get_high_score():
+                self.new_high_score = True
 
     def move_block(self, dx, dy):
         """移动方块"""
@@ -223,11 +421,15 @@ class TetrisGame:
                 self.current_block.x += 2
             else:
                 self.current_block.shape = original_shape
+                return  # 旋转失败，不播放音效
+
+        self.sound_manager.play('rotate')
 
     def hard_drop(self):
         """硬降方块"""
         while self.move_block(0, 1):
             self.score += 2
+        self.sound_manager.play('drop')
         self.lock_current_block()
 
     def lock_current_block(self):
@@ -238,6 +440,9 @@ class TetrisGame:
         if lines > 0:
             self.lines_cleared += lines
             self.level_lines += lines
+
+            # 播放消行音效
+            self.sound_manager.play_clear(lines)
 
             # 计分
             line_scores = {1: 100, 2: 300, 3: 500, 4: 800}
@@ -255,6 +460,7 @@ class TetrisGame:
             if self.level_index < len(LEVELS) - 1:
                 self.level_index += 1
                 self.level_lines = 0
+                self.sound_manager.play('levelup')  # 播放升级音效
 
     def get_current_speed(self):
         """获取当前下落速度"""
@@ -327,9 +533,14 @@ class TetrisGame:
         title = self.font_large.render('俄罗斯方块', True, WHITE)
         self.screen.blit(title, (ui_x, 20))
 
+        # 最高分
+        high_score = self.high_score_manager.get_high_score()
+        high_score_text = self.font_small.render(f'最高分：{high_score}', True, (255, 215, 0))
+        self.screen.blit(high_score_text, (ui_x, 55))
+
         # 下一个方块
         next_text = self.font_medium.render('下一个:', True, WHITE)
-        self.screen.blit(next_text, (ui_x, 70))
+        self.screen.blit(next_text, (ui_x, 85))
 
         # 绘制下一个方块预览
         preview_x = ui_x
@@ -387,13 +598,31 @@ class TetrisGame:
 
         self.screen.blit(game_over_text,
                         (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 - 60))
+                         SCREEN_HEIGHT // 2 - 80))
         self.screen.blit(score_text,
                         (SCREEN_WIDTH // 2 - score_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 - 10))
-        self.screen.blit(restart_text,
-                        (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 + 40))
+                         SCREEN_HEIGHT // 2 - 30))
+
+        # 显示最高分
+        high_score = self.high_score_manager.get_high_score()
+        high_score_text = self.font_small.render(f'最高分：{high_score}', True, WHITE)
+        self.screen.blit(high_score_text,
+                        (SCREEN_WIDTH // 2 - high_score_text.get_width() // 2,
+                         SCREEN_HEIGHT // 2 + 10))
+
+        # 新高分提示
+        if self.new_high_score:
+            new_record_text = self.font_medium.render('新纪录!', True, (255, 215, 0))
+            self.screen.blit(new_record_text,
+                            (SCREEN_WIDTH // 2 - new_record_text.get_width() // 2,
+                             SCREEN_HEIGHT // 2 + 40))
+            self.screen.blit(restart_text,
+                            (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
+                             SCREEN_HEIGHT // 2 + 80))
+        else:
+            self.screen.blit(restart_text,
+                            (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
+                             SCREEN_HEIGHT // 2 + 50))
 
     def draw_pause(self):
         """绘制暂停画面"""
