@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 1.2.0
+Version: 1.3.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -11,6 +11,8 @@ Features:
   - Line clear animations
   - Level up effects
   - Multiple game themes
+  - Hold block feature
+  - Combo system
 """
 
 import pygame
@@ -434,10 +436,13 @@ class TetrisGame:
         self.board = GameBoard()
         self.current_block = Block()
         self.next_block = Block()
+        self.hold_block = None  # 暂存的方块
+        self.can_hold = True  # 每回合只能暂存一次
         self.score = 0
         self.lines_cleared = 0
         self.level_index = 0
         self.level_lines = 0
+        self.combo = 0  # 连击计数器
         self.game_over = False
         self.paused = False
         self.last_fall_time = pygame.time.get_ticks()
@@ -447,6 +452,7 @@ class TetrisGame:
         self.clear_animation_frame = 0
         self.levelup_animation_frame = 0
         self.levelup_animation_text = ""
+        self.combo_animation_frame = 0  # 连击动画帧
 
     def spawn_block(self):
         """生成新方块"""
@@ -454,6 +460,7 @@ class TetrisGame:
         self.next_block = Block()
         self.current_block.x = GRID_WIDTH // 2 - len(self.current_block.shape[0]) // 2
         self.current_block.y = 0
+        self.can_hold = True  # 新方块生成后可以暂存
 
         if not self.board.is_valid_position(self.current_block):
             self.game_over = True
@@ -499,6 +506,25 @@ class TetrisGame:
         self.sound_manager.play('drop')
         self.lock_current_block()
 
+    def hold_block(self):
+        """暂存方块"""
+        if not self.can_hold:
+            return
+
+        if self.hold_block is None:
+            self.hold_block = Block(self.current_block.shape_type)
+            self.spawn_block()
+        else:
+            # 交换当前方块和暂存方块
+            current_type = self.current_block.shape_type
+            self.current_block = Block(self.hold_block.shape_type)
+            self.hold_block = Block(current_type)
+            self.current_block.x = GRID_WIDTH // 2 - len(self.current_block.shape[0]) // 2
+            self.current_block.y = 0
+
+        self.can_hold = False
+        self.sound_manager.play('rotate')
+
     def lock_current_block(self):
         """锁定当前方块"""
         self.board.lock_block(self.current_block)
@@ -509,6 +535,8 @@ class TetrisGame:
             self.clear_animation_frame = 0
             # 不立即消除，等待动画完成
         else:
+            # 没有消行，重置连击
+            self.combo = 0
             self.spawn_block()
 
     def _get_full_lines(self):
@@ -531,18 +559,28 @@ class TetrisGame:
             self.lines_cleared += lines
             self.level_lines += lines
 
-            # 播放消行音效
-            self.sound_manager.play_clear(lines)
+            # 连击系统
+            self.combo += 1
+            combo_bonus = self.combo * 50 * (self.level_index + 1)
 
             # 计分
             line_scores = {1: 100, 2: 300, 3: 500, 4: 800}
-            self.score += line_scores.get(lines, 0) * (self.level_index + 1)
+            base_score = line_scores.get(lines, 0) * (self.level_index + 1)
+            self.score += base_score + combo_bonus
+
+            # 播放消行音效
+            self.sound_manager.play_clear(lines)
 
             # 检查升级
             self._check_level_up()
 
             self.clearing_lines = []
             self.clear_animation_frame = 0
+
+            # 连击动画
+            if self.combo > 1:
+                self.combo_animation_frame = 30
+
             self.spawn_block()
         else:
             self.clear_animation_frame += 1
@@ -708,13 +746,30 @@ class TetrisGame:
         high_score_text = self.font_small.render(f'最高分：{high_score}', True, theme['accent_color'])
         self.screen.blit(high_score_text, (ui_x, 55))
 
+        # 暂存方块
+        hold_text = self.font_medium.render('暂存:', True, theme['text_color'])
+        self.screen.blit(hold_text, (ui_x, 85))
+
+        # 绘制暂存方块
+        if self.hold_block:
+            preview_x = ui_x
+            preview_y = 100
+            for y, row in enumerate(self.hold_block.shape):
+                for x, cell in enumerate(row):
+                    if cell:
+                        color = self.hold_block.color if self.can_hold else tuple(c // 2 for c in self.hold_block.color)
+                        pygame.draw.rect(self.screen, color,
+                                       (preview_x + x * BLOCK_SIZE,
+                                        preview_y + y * BLOCK_SIZE,
+                                        BLOCK_SIZE - 2, BLOCK_SIZE - 2))
+
         # 下一个方块
         next_text = self.font_medium.render('下一个:', True, theme['text_color'])
-        self.screen.blit(next_text, (ui_x, 85))
+        self.screen.blit(next_text, (ui_x, 165))
 
         # 绘制下一个方块预览
         preview_x = ui_x
-        preview_y = 100
+        preview_y = 180
         for y, row in enumerate(self.next_block.shape):
             for x, cell in enumerate(row):
                 if cell:
@@ -725,21 +780,29 @@ class TetrisGame:
 
         # 分数
         score_text = self.font_medium.render(f'分数：{self.score}', True, theme['text_color'])
-        self.screen.blit(score_text, (ui_x, 220))
+        self.screen.blit(score_text, (ui_x, 300))
 
         # 消除行数
         lines_text = self.font_medium.render(f'消除：{self.lines_cleared}', True, theme['text_color'])
-        self.screen.blit(lines_text, (ui_x, 260))
+        self.screen.blit(lines_text, (ui_x, 340))
+
+        # 连击
+        if self.combo > 0:
+            combo_text = self.font_medium.render(f'连击：{self.combo}', True, theme['accent_color'])
+            self.screen.blit(combo_text, (ui_x, 380))
+            ui_y_offset = 40
+        else:
+            ui_y_offset = 0
 
         # 关卡
         current_level = LEVELS[self.level_index]
-        level_text = self.font_medium.render(f'关卡：{current_level["name"]}', True, theme['text_color'])
-        self.screen.blit(level_text, (ui_x, 300))
+        level_text = self.font_medium.render(f'关卡：{current_level["name"]}', True,theme['text_color'])
+        self.screen.blit(level_text, (ui_x, 420 - ui_y_offset))
 
         # 升级进度
         progress = f'{self.level_lines}/{current_level["lines"]}'
         progress_text = self.font_small.render(f'升级：{progress}', True, theme['text_color'])
-        self.screen.blit(progress_text, (ui_x, 340))
+        self.screen.blit(progress_text, (ui_x, 460 - ui_y_offset))
 
         # 操作说明
         controls = [
@@ -748,13 +811,14 @@ class TetrisGame:
             '↑ 旋转',
             '↓ 软降',
             '空格 硬降',
+            'C 暂存',
             'P 暂停',
             'R 重新开始',
             'T 切换主题',
         ]
         for i, text in enumerate(controls):
             rendered = self.font_small.render(text, True, theme['text_color'])
-            self.screen.blit(rendered, (ui_x, 380 + i * 25))
+            self.screen.blit(rendered, (ui_x, 500 - ui_y_offset + i * 25))
 
     def draw_game_over(self):
         """绘制游戏结束画面"""
@@ -809,6 +873,35 @@ class TetrisGame:
                         (SCREEN_WIDTH // 2 - pause_text.get_width() // 2,
                          SCREEN_HEIGHT // 2))
 
+    def _draw_combo_animation(self):
+        """绘制连击动画"""
+        if self.combo_animation_frame <= 0:
+            return
+
+        progress = self.combo_animation_frame / 30
+
+        # 在游戏区域中央绘制连击文字
+        combo_text = self.font_large.render(f'{self.combo} COMBO!', True, (255, 215, 0))
+        scale = 1 + 0.3 * (1 - progress)
+        scaled_text = pygame.transform.scale(combo_text,
+            (int(combo_text.get_width() * scale), int(combo_text.get_height() * scale)))
+        scaled_rect = scaled_text.get_rect(center=(GRID_WIDTH * BLOCK_SIZE // 2, GRID_HEIGHT * BLOCK_SIZE // 2))
+
+        # 绘制发光效果
+        glow = self.font_large.render(f'{self.combo} COMBO!', True, (255, 100, 100))
+        glow_rect = glow.get_rect(center=(GRID_WIDTH * BLOCK_SIZE // 2 + 2, GRID_HEIGHT * BLOCK_SIZE // 2 + 2))
+        self.screen.blit(glow, glow_rect)
+        self.screen.blit(scaled_text, scaled_rect)
+
+        # 粒子效果
+        for _ in range(5):
+            px = random.randint(0, GRID_WIDTH * BLOCK_SIZE)
+            py = random.randint(0, GRID_HEIGHT * BLOCK_SIZE)
+            color = random.choice([(255, 215, 0), (255, 100, 100), (100, 255, 100)])
+            pygame.draw.circle(self.screen, color, (px, py), random.randint(2, 4))
+
+        self.combo_animation_frame -= 1
+
     def draw(self):
         """绘制游戏画面"""
         self.screen.fill(self.current_theme['bg_color'])
@@ -830,6 +923,10 @@ class TetrisGame:
         # 绘制消行动画
         if self.clearing_lines:
             self._draw_clear_animation()
+
+        # 绘制连击动画
+        if self.combo_animation_frame > 0:
+            self._draw_combo_animation()
 
         # 绘制升级动画
         if self.levelup_animation_frame > 0 and self.levelup_animation_frame < LEVELUP_ANIMATION_FRAMES:
@@ -876,6 +973,8 @@ class TetrisGame:
                     self.rotate_block()
                 elif event.key == pygame.K_SPACE:
                     self.hard_drop()
+                elif event.key == pygame.K_c:
+                    self.hold_block()
 
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_p and not self.game_over:
