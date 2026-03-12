@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.6.0
+Version: 2.7.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -24,6 +24,7 @@ Features:
   - Unlockable block skins
   - Online leaderboard and cloud save (v2.4.0)
   - More game modes: Master, Zen, Challenge, Custom (v2.5.0)
+  - Daily challenge mode and expanded achievements (v2.7.0)
 """
 
 import pygame
@@ -165,6 +166,20 @@ GAME_MODES = {
     'zen': {'name': '禅模式', 'desc': '无压力，放松体验'},
     'challenge': {'name': '挑战模式', 'desc': '特殊规则挑战'},
     'custom': {'name': '自定义模式', 'desc': '自定义游戏规则'},
+    'daily': {'name': '每日挑战', 'desc': '每天特殊的挑战任务'},
+}
+
+# 每日挑战配置
+DAILY_CHALLENGES_FILE = 'daily_challenge.json'
+
+# 每日挑战类型
+DAILY_CHALLENGE_TYPES = {
+    'speed': {'name': '速度挑战', 'desc': '在更快速度下完成游戏'},
+    'blind': {'name': '盲目挑战', 'desc': '不显示下一个方块'},
+    'no_hold': {'name': '无暂存挑战', 'desc': '禁止使用暂存方块'},
+    'score': {'name': '高分挑战', 'desc': '获得尽可能高的分数'},
+    'lines': {'name': '消行挑战', 'desc': '消除指定行数'},
+    'combo': {'name': '连击挑战', 'desc': '达成高连击数'},
 }
 
 # 无尽模式配置
@@ -459,6 +474,184 @@ class CustomRulesManager:
     def get_all_rules(self):
         """获取所有规则"""
         return self.rules.copy()
+
+
+class DailyChallengeManager:
+    """每日挑战管理器 - v2.7.0 新增"""
+
+    def __init__(self):
+        self.current_challenge = None
+        self.last_reset_date = None
+        self.challenge_history = []
+        self._load_challenge()
+
+    def _get_file_path(self):
+        """获取每日挑战文件路径"""
+        if getattr(sys, 'frozen', False):
+            return os.path.join(os.path.dirname(sys.executable), DAILY_CHALLENGES_FILE)
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), DAILY_CHALLENGES_FILE)
+
+    def _load_challenge(self):
+        """加载每日挑战"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.current_challenge = data.get('challenge')
+                    self.last_reset_date = data.get('last_reset_date')
+                    self.challenge_history = data.get('history', [])
+            self._check_reset()
+        except Exception as e:
+            print(f"加载每日挑战失败：{e}")
+            self._generate_new_challenge()
+
+    def _save_challenge(self):
+        """保存每日挑战"""
+        try:
+            file_path = self._get_file_path()
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'challenge': self.current_challenge,
+                    'last_reset_date': self.last_reset_date,
+                    'history': self.challenge_history
+                }, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存每日挑战失败：{e}")
+
+    def _get_today_date(self):
+        """获取今天日期字符串"""
+        from datetime import datetime
+        return datetime.now().strftime('%Y-%m-%d')
+
+    def _check_reset(self):
+        """检查是否需要重置挑战"""
+        today = self._get_today_date()
+        if self.last_reset_date != today:
+            self._generate_new_challenge()
+            self.last_reset_date = today
+            self._save_challenge()
+
+    def _generate_new_challenge(self):
+        """生成新的每日挑战"""
+        import hashlib
+        from datetime import datetime
+
+        today = self._get_today_date()
+        # 使用日期生成种子
+        seed = int(hashlib.md5(today.encode()).hexdigest()[:8], 16)
+        random.seed(seed)
+
+        # 随机选择挑战类型
+        challenge_type = random.choice(list(DAILY_CHALLENGE_TYPES.keys()))
+        challenge_config = DAILY_CHALLENGE_TYPES[challenge_type]
+
+        # 生成挑战目标
+        target = random.choice([50, 100, 150, 200, 250, 300])
+
+        # 生成挑战规则
+        self.current_challenge = {
+            'type': challenge_type,
+            'name': challenge_config['name'],
+            'desc': challenge_config['desc'],
+            'target': target,
+            'date': today,
+            'completed': False,
+            'rules': self._get_challenge_rules(challenge_type, target)
+        }
+
+        # 添加到历史
+        self.challenge_history.append({
+            'date': today,
+            'type': challenge_type,
+            'name': challenge_config['name'],
+            'target': target,
+            'completed': False
+        })
+        # 保留最近 30 天历史
+        self.challenge_history = self.challenge_history[-30:]
+
+        random.seed()  # 恢复随机种子
+
+    def _get_challenge_rules(self, challenge_type, target):
+        """根据挑战类型生成规则"""
+        rules = {
+            'initial_level': 1,
+            'max_level': 10,
+            'target_lines': target,
+        }
+
+        if challenge_type == 'speed':
+            rules['speed_multiplier'] = 1.5  # 速度提升 50%
+            rules['desc'] = f'在 1.5 倍速度下消除{target}行'
+        elif challenge_type == 'blind':
+            rules['next_enabled'] = False
+            rules['desc'] = f'在不显示下一个方块的情况下消除{target}行'
+        elif challenge_type == 'no_hold':
+            rules['hold_enabled'] = False
+            rules['desc'] = f'在不使用暂存的情况下消除{target}行'
+        elif challenge_type == 'score':
+            rules['target_score'] = target * 100
+            rules['desc'] = f'获得{target * 100}分'
+        elif challenge_type == 'lines':
+            rules['desc'] = f'消除{target}行'
+        elif challenge_type == 'combo':
+            rules['target_combo'] = min(10, target // 20)
+            rules['desc'] = f'达成{min(10, target // 20)}连击'
+
+        return rules
+
+    def get_current_challenge(self):
+        """获取当前每日挑战"""
+        self._check_reset()
+        return self.current_challenge
+
+    def is_completed(self):
+        """检查今日挑战是否已完成"""
+        self._check_reset()
+        return self.current_challenge.get('completed', False) if self.current_challenge else False
+
+    def mark_completed(self):
+        """标记挑战为已完成"""
+        if self.current_challenge:
+            self.current_challenge['completed'] = True
+            # 更新历史记录
+            today = self._get_today_date()
+            for record in reversed(self.challenge_history):
+                if record['date'] == today:
+                    record['completed'] = True
+                    break
+            self._save_challenge()
+            return True
+        return False
+
+    def check_completion(self, game_stats):
+        """检查游戏统计是否满足挑战完成条件"""
+        if not self.current_challenge or self.current_challenge.get('completed'):
+            return False
+
+        challenge_type = self.current_challenge['type']
+
+        if challenge_type == 'speed':
+            return game_stats.get('level', 1) >= self.current_challenge['rules'].get('max_level', 10)
+        elif challenge_type == 'blind':
+            return game_stats.get('lines_cleared', 0) >= self.current_challenge['rules'].get('target_lines', 0)
+        elif challenge_type == 'no_hold':
+            return game_stats.get('lines_cleared', 0) >= self.current_challenge['rules'].get('target_lines', 0)
+        elif challenge_type == 'score':
+            return game_stats.get('score', 0) >= self.current_challenge['rules'].get('target_score', 0)
+        elif challenge_type == 'lines':
+            return game_stats.get('lines_cleared', 0) >= self.current_challenge['rules'].get('target_lines', 0)
+        elif challenge_type == 'combo':
+            return game_stats.get('max_combo', 0) >= self.current_challenge['rules'].get('target_combo', 5)
+
+        return False
+
+    def get_challenge_display(self):
+        """获取用于显示的挑战信息"""
+        if not self.current_challenge:
+            return "无挑战"
+        return f"{self.current_challenge['name']}: {self.current_challenge['desc']}"
 
 
 class SoundManager:
@@ -822,6 +1015,17 @@ ACHIEVEMENTS = {
     'level_10': {'name': '传奇玩家', 'desc': '达到第 10 关', 'icon': '👑'},
     'sprint_fast': {'name': '速度之星', 'desc': '竞速模式 60 秒内完成', 'icon': '🚀'},
     'endless_10': {'name': '持久战', 'desc': '无尽模式达到等级 10', 'icon': '∞'},
+    # v2.7.0 新增成就
+    'perfect_game': {'name': '完美游戏', 'desc': '完成一局游戏 without game over', 'icon': '✨'},
+    'marathon': {'name': '马拉松选手', 'desc': '累计游戏时间达到 1 小时', 'icon': '⏱️'},
+    'century': {'name': '世纪玩家', 'desc': '累计消除 100 行', 'icon': '💯'},
+    'skin_collector': {'name': '收藏家', 'desc': '解锁所有方块皮肤', 'icon': '🎨'},
+    'daily_champion': {'name': '每日冠军', 'desc': '完成每日挑战', 'icon': '🏅'},
+    'master_mode_clear': {'name': '大师征服者', 'desc': '完成大师模式', 'icon': '👹'},
+    'zen_master': {'name': '禅宗大师', 'desc': '禅模式消除 200 行', 'icon': '🧘'},
+    'challenge_master': {'name': '挑战之王', 'desc': '完成所有挑战模式', 'icon': '🏆'},
+    'score_50000': {'name': '五万分大师', 'desc': '单局获得 50000 分', 'icon': '💰'},
+    'combo_20': {'name': '连击之神', 'desc': '达成 20 连击', 'icon': '⚡🔥'},
 }
 
 # 在线功能常量
