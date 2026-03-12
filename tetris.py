@@ -3508,7 +3508,7 @@ class GameMenu:
         self.screen.blit(title, title_rect)
 
         # 版本信息
-        version = self.font_small.render('Version 2.7.0 - 游戏体验增强', True, GRAY)
+        version = self.font_small.render('Version 2.9.0 - Bug 修复版本', True, GRAY)
         version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130 + int(self.title_y_offset)))
         self.screen.blit(version, version_rect)
 
