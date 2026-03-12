@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.1.0
+Version: 2.2.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -1762,7 +1762,7 @@ class GameMenu:
         self.screen.blit(title, title_rect)
 
         # 版本信息
-        version = self.font_small.render('Version 2.1.0 - 多种游戏模式', True, GRAY)
+        version = self.font_small.render('Version 2.2.0 - 音效增强', True, GRAY)
         version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130))
         self.screen.blit(version, version_rect)
 
