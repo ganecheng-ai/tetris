@@ -30,4 +30,4 @@
 
 # 待修复问题清单
 以下issue如果还是opened状态, 需要在修复之后关闭, 及时发布新版本, 在issue里回复用户哪个版本可以验证是否修复成功. 不在下面清单中的issue可以忽略不用修复.
-- https://github.com/ganecheng-ai/tetris/issues/1
+- https://github.com/ganecheng-ai/tetris/issues/2
