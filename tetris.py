@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.3.0
+Version: 2.5.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -22,6 +22,8 @@ Features:
   - Enhanced line clear animations with explosions
   - Background particle effects
   - Unlockable block skins
+  - Online leaderboard and cloud save (v2.4.0)
+  - More game modes: Master, Zen, Challenge, Custom (v2.5.0)
 """
 
 import pygame
