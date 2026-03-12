@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.5.0
+Version: 2.6.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
