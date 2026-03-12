@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.7.0
+Version: 2.8.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -25,6 +25,7 @@ Features:
   - Online leaderboard and cloud save (v2.4.0)
   - More game modes: Master, Zen, Challenge, Custom (v2.5.0)
   - Daily challenge mode and expanded achievements (v2.7.0)
+  - Sound pack system and theme expansion (v2.8.0)
 """
 
 import pygame
@@ -182,6 +183,33 @@ DAILY_CHALLENGE_TYPES = {
     'combo': {'name': '连击挑战', 'desc': '达成高连击数'},
 }
 
+# v2.8.0 音效包配置
+SOUND_PACKS_FILE = 'sound_packs.json'
+
+# 音效包类型
+SOUND_PACKS = {
+    'classic': {
+        'name': '经典 8 位',
+        'desc': '经典 8 位游戏风格音效',
+        'wave_types': {'drop': 'square', 'place': 'square', 'clear': 'square', 'rotate': 'square'},
+    },
+    'electronic': {
+        'name': '电子',
+        'desc': '现代电子风格音效',
+        'wave_types': {'drop': 'sawtooth', 'place': 'sine', 'clear': 'triangle', 'rotate': 'sine'},
+    },
+    'nature': {
+        'name': '自然',
+        'desc': '自然柔和风格音效',
+        'wave_types': {'drop': 'sine', 'place': 'sine', 'clear': 'sine', 'rotate': 'sine'},
+    },
+    'piano': {
+        'name': '钢琴',
+        'desc': '钢琴音色风格音效',
+        'wave_types': {'drop': 'triangle', 'place': 'triangle', 'clear': 'triangle', 'rotate': 'triangle'},
+    },
+}
+
 # 无尽模式配置
 ENDLESS_SPEEDS = [800, 700, 600, 500, 400, 300, 200, 150, 100, 80, 60, 50, 40, 30, 20]
 
@@ -296,6 +324,59 @@ BLOCK_SKINS = {
         },
         'unlock_condition': {'type': 'tetris', 'value': 10},
     },
+    # v2.8.0 新增皮肤
+    'diamond': {
+        'name': '钻石',
+        'colors': {
+            'I': (185, 242, 255),
+            'O': (255, 253, 185),
+            'T': (234, 185, 255),
+            'S': (185, 255, 215),
+            'Z': (255, 185, 195),
+            'J': (185, 205, 255),
+            'L': (255, 215, 185),
+        },
+        'unlock_condition': {'type': 'score', 'value': 20000},
+    },
+    'magma': {
+        'name': '岩浆',
+        'colors': {
+            'I': (255, 100, 50),
+            'O': (255, 150, 50),
+            'T': (255, 80, 80),
+            'S': (255, 120, 60),
+            'Z': (200, 50, 50),
+            'J': (180, 80, 100),
+            'L': (255, 100, 30),
+        },
+        'unlock_condition': {'type': 'lines', 'value': 200},
+    },
+    'starry': {
+        'name': '星空',
+        'colors': {
+            'I': (100, 100, 255),
+            'O': (255, 255, 150),
+            'T': (180, 100, 255),
+            'S': (100, 255, 150),
+            'Z': (255, 100, 150),
+            'J': (100, 150, 255),
+            'L': (255, 150, 100),
+        },
+        'unlock_condition': {'type': 'level', 'value': 15},
+    },
+    'metal': {
+        'name': '金属',
+        'colors': {
+            'I': (192, 192, 192),
+            'O': (212, 212, 212),
+            'T': (169, 169, 169),
+            'S': (128, 128, 128),
+            'Z': (105, 105, 105),
+            'J': (176, 196, 222),
+            'L': (211, 211, 211),
+        },
+        'unlock_condition': {'type': 'combo', 'value': 25},
+    },
 }
 
 # 支持的皮肤列表
@@ -342,6 +423,47 @@ THEMES = {
         'text_color': (0, 255, 255),
         'accent_color': (255, 0, 255),
         'block_style': 'neon',
+    },
+    # v2.8.0 新增主题
+    'ocean': {
+        'name': '海洋',
+        'bg_color': (0, 20, 40),
+        'grid_color': (0, 40, 80),
+        'grid_line_color': (0, 60, 120),
+        'ui_bg': (0, 25, 50),
+        'text_color': (150, 200, 255),
+        'accent_color': (0, 191, 255),
+        'block_style': 'gradient',
+    },
+    'starry': {
+        'name': '星空',
+        'bg_color': (10, 5, 30),
+        'grid_color': (30, 20, 60),
+        'grid_line_color': (50, 30, 90),
+        'ui_bg': (15, 10, 40),
+        'text_color': (200, 180, 255),
+        'accent_color': (138, 43, 226),
+        'block_style': 'neon',
+    },
+    'cyberpunk': {
+        'name': '赛博朋克',
+        'bg_color': (20, 0, 30),
+        'grid_color': (50, 0, 70),
+        'grid_line_color': (80, 0, 110),
+        'ui_bg': (30, 0, 45),
+        'text_color': (255, 0, 128),
+        'accent_color': (0, 255, 128),
+        'block_style': 'neon',
+    },
+    'retro': {
+        'name': '复古',
+        'bg_color': (30, 30, 20),
+        'grid_color': (60, 60, 40),
+        'grid_line_color': (80, 80, 60),
+        'ui_bg': (40, 40, 30),
+        'text_color': (255, 220, 100),
+        'accent_color': (255, 100, 50),
+        'block_style': 'flat',
     },
 }
 
@@ -944,7 +1066,7 @@ class GameSpeedManager:
 
 
 class SoundManager:
-    """音效管理器 - 支持音效和背景音乐独立控制"""
+    """音效管理器 - 支持音效和背景音乐独立控制 - v2.8.0 支持音效包"""
 
     def __init__(self):
         self.enabled = SOUND_ENABLED
@@ -958,6 +1080,10 @@ class SoundManager:
         self.sound_volume = SOUND_VOLUME
         self.music_volume = MUSIC_VOLUME
 
+        # v2.8.0 音效包支持
+        self.current_sound_pack = 'classic'
+        self._load_sound_pack_settings()
+
         # 加载音量设置
         self._load_volume_settings()
 
@@ -965,6 +1091,42 @@ class SoundManager:
             pygame.mixer.init()
             self._init_sounds()
             self._init_music_playlist()
+
+    def _load_sound_pack_settings(self):
+        """加载音效包设置 - v2.8.0 新增"""
+        try:
+            if os.path.exists(SOUND_PACKS_FILE):
+                with open(SOUND_PACKS_FILE, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    self.current_sound_pack = settings.get('current_pack', 'classic')
+        except Exception as e:
+            print(f"加载音效包设置失败：{e}")
+
+    def _save_sound_pack_settings(self):
+        """保存音效包设置 - v2.8.0 新增"""
+        try:
+            with open(SOUND_PACKS_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'current_pack': self.current_sound_pack}, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存音效包设置失败：{e}")
+
+    def set_sound_pack(self, pack_name):
+        """设置音效包 - v2.8.0 新增"""
+        if pack_name in SOUND_PACKS:
+            self.current_sound_pack = pack_name
+            self._save_sound_pack_settings()
+            # 重新初始化音效
+            self._init_sounds()
+            return True
+        return False
+
+    def get_sound_pack_info(self):
+        """获取当前音效包信息 - v2.8.0 新增"""
+        return SOUND_PACKS.get(self.current_sound_pack, SOUND_PACKS['classic'])
+
+    def get_all_sound_packs(self):
+        """获取所有音效包信息 - v2.8.0 新增"""
+        return SOUND_PACKS
 
     def _load_volume_settings(self):
         """加载音量设置"""
@@ -1131,28 +1293,32 @@ class SoundManager:
             self.music_loaded = False
 
     def _init_sounds(self):
-        """初始化音效（使用程序生成的声音）"""
+        """初始化音效（使用程序生成的声音）- v2.8.0 支持音效包"""
         try:
             # 使用 pygame 生成简单的音效
             sample_rate = 22050
 
+            # v2.8.0: 获取当前音效包的波形类型配置
+            pack_config = SOUND_PACKS.get(self.current_sound_pack, SOUND_PACKS['classic'])
+            wave_types = pack_config.get('wave_types', {})
+
             # 硬降音效 - 高频短音
-            self.sounds['drop'] = self._generate_sound(400, 0.1, 'square')
+            self.sounds['drop'] = self._generate_sound(400, 0.1, wave_types.get('drop', 'square'))
 
             # 软降/放置音效
-            self.sounds['place'] = self._generate_sound(350, 0.05, 'sine')
+            self.sounds['place'] = self._generate_sound(350, 0.05, wave_types.get('place', 'sine'))
 
             # 消行音效 - 和弦效果
-            self.sounds['clear'] = self._generate_sound(600, 0.2, 'sine')
+            self.sounds['clear'] = self._generate_sound(600, 0.2, wave_types.get('clear', 'sine'))
 
             # 消多行音效 - 更长的音效
-            self.sounds['clear_multi'] = self._generate_sound(800, 0.3, 'sine')
+            self.sounds['clear_multi'] = self._generate_sound(800, 0.3, wave_types.get('clear', 'sine'))
 
             # Tetris 消除（4 行）特殊音效
-            self.sounds['tetris'] = self._generate_sound(1000, 0.5, 'sine')
+            self.sounds['tetris'] = self._generate_sound(1000, 0.5, wave_types.get('clear', 'sine'))
 
             # 旋转音效
-            self.sounds['rotate'] = self._generate_sound(300, 0.05, 'sine')
+            self.sounds['rotate'] = self._generate_sound(300, 0.05, wave_types.get('rotate', 'sine'))
 
             # 旋转失败音效
             self.sounds['rotate_fail'] = self._generate_sound(200, 0.1, 'sawtooth')
