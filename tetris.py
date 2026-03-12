@@ -714,6 +714,293 @@ ACHIEVEMENTS = {
     'endless_10': {'name': '持久战', 'desc': '无尽模式达到等级 10', 'icon': '∞'},
 }
 
+# 在线功能常量
+ONLINE_CONFIG_FILE = 'online_config.json'
+CLOUD_SAVE_FILE = 'cloud_save.json'
+PLAYER_ID_FILE = 'player_id.json'
+
+# 模拟在线排行榜数据（离线模式使用本地数据）
+# 在实际在线模式中，这些数据会从服务器获取
+ONLINE_LEADERBOARD_URL = 'https://example.com/api/leaderboard'  # 示例 URL
+
+
+class OnlineLeaderboardManager:
+    """在线排行榜管理器 - v2.4.0 新增"""
+
+    def __init__(self):
+        self.is_online = False
+        self.player_id = None
+        self.leaderboard_data = {}
+        self._load_player_id()
+        self._check_online_status()
+
+    def _load_player_id(self):
+        """加载或生成玩家 ID"""
+        try:
+            if os.path.exists(PLAYER_ID_FILE):
+                with open(PLAYER_ID_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.player_id = data.get('player_id')
+                    if not self.player_id:
+                        self.player_id = self._generate_player_id()
+                        self._save_player_id()
+            else:
+                self.player_id = self._generate_player_id()
+                self._save_player_id()
+        except Exception as e:
+            print(f"加载玩家 ID 失败：{e}")
+            self.player_id = self._generate_player_id()
+
+    def _generate_player_id(self):
+        """生成唯一玩家 ID"""
+        import hashlib
+        import time
+        # 使用时间戳和随机数生成唯一 ID
+        raw = f"{time.time()}_{random.randint(100000, 999999)}"
+        return hashlib.md5(raw.encode()).hexdigest()[:12].upper()
+
+    def _save_player_id(self):
+        """保存玩家 ID"""
+        try:
+            with open(PLAYER_ID_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'player_id': self.player_id}, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存玩家 ID 失败：{e}")
+
+    def _check_online_status(self):
+        """检查网络状态"""
+        try:
+            import urllib.request
+            urllib.request.urlopen('https://www.google.com', timeout=3)
+            self.is_online = True
+        except Exception:
+            self.is_online = False
+
+    def get_player_id(self):
+        """获取玩家 ID"""
+        return self.player_id
+
+    def get_player_id_display(self):
+        """获取用于显示的玩家 ID（脱敏）"""
+        if self.player_id:
+            return f"玩家#{self.player_id[:4]}****"
+        return "未知玩家"
+
+    def refresh_online_status(self):
+        """刷新在线状态"""
+        self._check_online_status()
+        return self.is_online
+
+    def upload_score(self, score, lines, level, mode='classic', extra_data=None):
+        """上传分数到在线排行榜"""
+        if not self.is_online:
+            return False
+
+        try:
+            import urllib.request
+            data = {
+                'player_id': self.player_id,
+                'score': score,
+                'lines': lines,
+                'level': level,
+                'mode': mode,
+                'timestamp': pygame.time.get_ticks() // 1000,
+            }
+            if extra_data:
+                data.update(extra_data)
+
+            req = urllib.request.Request(
+                ONLINE_LEADERBOARD_URL + '/submit',
+                data=json.dumps(data).encode('utf-8'),
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status == 200
+        except Exception as e:
+            print(f"上传分数失败：{e}")
+            self.is_online = False
+            return False
+
+    def download_leaderboard(self, mode='classic', limit=10):
+        """下载排行榜数据"""
+        if not self.is_online:
+            return self._get_local_leaderboard(mode, limit)
+
+        try:
+            import urllib.request
+            url = f"{ONLINE_LEADERBOARD_URL}?mode={mode}&limit={limit}"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                self.leaderboard_data[mode] = data
+                return data
+        except Exception as e:
+            print(f"下载排行榜失败：{e}")
+            self.is_online = False
+            return self._get_local_leaderboard(mode, limit)
+
+    def _get_local_leaderboard(self, mode='classic', limit=10):
+        """获取本地排行榜（离线模式）"""
+        # 从本地最高分记录生成排行榜
+        try:
+            if os.path.exists(HIGH_SCORE_FILE):
+                with open(HIGH_SCORE_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    modes_data = data.get('modes', {}) if isinstance(data, dict) else {'classic': data}
+                    scores = modes_data.get(mode, [])
+                    # 添加玩家 ID 信息
+                    leaderboard = []
+                    for i, entry in enumerate(scores[:limit]):
+                        leaderboard.append({
+                            'rank': i + 1,
+                            'player_id': self.player_id,
+                            'player_name': f'本地玩家{i+1}',
+                            'score': entry.get('score', 0),
+                            'lines': entry.get('lines', 0),
+                            'level': entry.get('level', 1),
+                            'date': entry.get('date', 0),
+                            'is_local': True,
+                        })
+                    return leaderboard
+        except Exception as e:
+            print(f"获取本地排行榜失败：{e}")
+        return []
+
+    def get_online_status(self):
+        """获取在线状态"""
+        return self.is_online
+
+
+class CloudSaveManager:
+    """云端存档管理器 - v2.4.0 新增"""
+
+    def __init__(self, online_manager):
+        self.online_manager = online_manager
+        self.local_save_data = {}
+        self._load_local_save()
+
+    def _get_file_path(self):
+        """获取云端存档文件路径"""
+        if getattr(sys, 'frozen', False):
+            return os.path.join(os.path.dirname(sys.executable), CLOUD_SAVE_FILE)
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), CLOUD_SAVE_FILE)
+
+    def _load_local_save(self):
+        """加载本地存档"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    self.local_save_data = json.load(f)
+        except Exception as e:
+            print(f"加载本地存档失败：{e}")
+            self.local_save_data = {}
+
+    def _save_local_save(self):
+        """保存本地存档"""
+        try:
+            file_path = self._get_file_path()
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(self.local_save_data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"保存本地存档失败：{e}")
+            return False
+
+    def save_game(self, game_data):
+        """保存游戏存档"""
+        save_data = {
+            'player_id': self.online_manager.get_player_id(),
+            'timestamp': pygame.time.get_ticks() // 1000,
+            'version': '2.4.0',
+            'game_data': game_data,
+        }
+        self.local_save_data = save_data
+        self._save_local_save()
+
+        # 如果在线，尝试上传到云端
+        if self.online_manager.get_online_status():
+            self._upload_cloud_save(save_data)
+
+        return True
+
+    def load_game(self):
+        """加载游戏存档"""
+        if not self.local_save_data:
+            return None
+
+        # 验证存档归属
+        saved_player_id = self.local_save_data.get('player_id')
+        if saved_player_id != self.online_manager.get_player_id():
+            print("存档不属于当前玩家")
+            return None
+
+        return self.local_save_data.get('game_data')
+
+    def has_save(self):
+        """检查是否有存档"""
+        return bool(self.local_save_data)
+
+    def delete_save(self):
+        """删除存档"""
+        self.local_save_data = {}
+        file_path = self._get_file_path()
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return True
+
+    def _upload_cloud_save(self, save_data):
+        """上传云端存档"""
+        if not self.online_manager.get_online_status():
+            return False
+
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                ONLINE_LEADERBOARD_URL + '/cloudsave',
+                data=json.dumps(save_data).encode('utf-8'),
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status == 200
+        except Exception as e:
+            print(f"上传云端存档失败：{e}")
+            return False
+
+    def _download_cloud_save(self):
+        """下载云端存档"""
+        if not self.online_manager.get_online_status():
+            return None
+
+        try:
+            import urllib.request
+            url = f"{ONLINE_LEADERBOARD_URL}/cloudsave?player_id={self.online_manager.get_player_id()}"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                if data:
+                    self.local_save_data = data
+                    self._save_local_save()
+                return data
+        except Exception as e:
+            print(f"下载云端存档失败：{e}")
+            return None
+
+    def get_save_info(self):
+        """获取存档信息"""
+        if not self.local_save_data:
+            return None
+
+        game_data = self.local_save_data.get('game_data', {})
+        return {
+            'timestamp': self.local_save_data.get('timestamp', 0),
+            'version': self.local_save_data.get('version', 'unknown'),
+            'score': game_data.get('score', 0),
+            'lines': game_data.get('lines_cleared', 0),
+            'level': game_data.get('level_index', 0) + 1,
+            'mode': game_data.get('game_mode', 'classic'),
+        }
+
 
 class StatisticsManager:
     """游戏统计管理器"""
@@ -1003,6 +1290,8 @@ class TetrisGame:
         self.sound_manager = SoundManager()
         self.high_score_manager = HighScoreManager()
         self.statistics_manager = StatisticsManager()
+        self.online_manager = OnlineLeaderboardManager()
+        self.cloud_save_manager = CloudSaveManager(self.online_manager)
 
         # 游戏模式
         self.game_mode = mode
@@ -1202,6 +1491,15 @@ class TetrisGame:
             self.statistics_manager.unlock_achievement('first_game')
             if self.score >= 10000:
                 self.statistics_manager.unlock_achievement('score_10000')
+
+            # 上传分数到在线排行榜（如果在线）
+            extra_data = {}
+            if self.game_mode == 'sprint':
+                extra_data = {'time': (pygame.time.get_ticks() - self.sprint_start_time) / 1000}
+            self.online_manager.upload_score(
+                self.score, self.lines_cleared, self.level_index + 1,
+                mode=self.game_mode, extra_data=extra_data
+            )
 
     def move_block(self, dx, dy):
         """移动方块"""
@@ -1679,6 +1977,10 @@ class TetrisGame:
             '1/2 音效音量',
             '3/4 音乐音量',
             'M 切换音乐',
+            'F5 刷新在线',
+            'S 保存 (暂停)',
+            'L 读取存档',
+            'DEL 删除存档 (暂停)',
         ]
         for i, text in enumerate(controls):
             rendered = self.font_small.render(text, True, theme['text_color'])
@@ -1695,6 +1997,26 @@ class TetrisGame:
         else:
             music_status = self.font_small.render('音乐：已暂停', True, theme['text_color'])
         self.screen.blit(music_status, (ui_x, volume_y + 60))
+
+        # 在线状态显示 - v2.4.0 新增
+        online_status_y = volume_y + 100
+        if self.online_manager.get_online_status():
+            online_text = self.font_small.render('在线：已连接', True, (100, 255, 100))
+        else:
+            online_text = self.font_small.render('在线：离线模式', True, (255, 200, 100))
+        self.screen.blit(online_text, (ui_x, online_status_y))
+
+        # 玩家 ID 显示
+        player_id_text = self.font_small.render(f'ID: {self.online_manager.get_player_id_display()}', True, theme['text_color'])
+        self.screen.blit(player_id_text, (ui_x, online_status_y + 20))
+
+        # 存档状态
+        if self.cloud_save_manager.has_save():
+            save_info = self.cloud_save_manager.get_save_info()
+            save_text = self.font_small.render(f'存档：{save_info["score"]}分 L{save_info["level"]}', True, theme['accent_color'])
+        else:
+            save_text = self.font_small.render('存档：无', True, theme['text_color'])
+        self.screen.blit(save_text, (ui_x, online_status_y + 40))
 
     def _draw_volume_bar(self, x, y, label, volume, theme):
         """绘制音量条"""
@@ -1901,6 +2223,35 @@ class TetrisGame:
                 if event.key == pygame.K_m:
                     # 切换背景音乐
                     self.sound_manager.toggle_music()
+                    continue
+
+                # 云存档控制 - v2.4.0 新增
+                if event.key == pygame.K_F5:
+                    # 刷新在线状态
+                    self.online_manager.refresh_online_status()
+                    continue
+                if event.key == pygame.K_s and self.paused:
+                    # 保存游戏（暂停时）
+                    game_data = {
+                        'score': self.score,
+                        'lines_cleared': self.lines_cleared,
+                        'level_index': self.level_index,
+                        'game_mode': self.game_mode,
+                    }
+                    self.cloud_save_manager.save_game(game_data)
+                    continue
+                if event.key == pygame.K_l:
+                    # 加载游戏
+                    if self.cloud_save_manager.has_save():
+                        game_data = self.cloud_save_manager.load_game()
+                        if game_data:
+                            self.score = game_data.get('score', 0)
+                            self.lines_cleared = game_data.get('lines_cleared', 0)
+                            self.level_index = game_data.get('level_index', 0)
+                    continue
+                if event.key == pygame.K_DELETE and self.paused:
+                    # 删除存档（暂停时）
+                    self.cloud_save_manager.delete_save()
                     continue
 
                 if self.game_over or self.paused:
