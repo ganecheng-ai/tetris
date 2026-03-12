@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.8.0
+Version: 2.9.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -26,6 +26,7 @@ Features:
   - More game modes: Master, Zen, Challenge, Custom (v2.5.0)
   - Daily challenge mode and expanded achievements (v2.7.0)
   - Sound pack system and theme expansion (v2.8.0)
+  - Bug fixes: Fix white screen issue on Windows (v2.9.0)
 """
 
 import pygame
@@ -3681,10 +3682,16 @@ class GameMenu:
                 self.draw_main_menu()
                 result = self.handle_main_menu_events()
             elif self.menu_state == 'single':
+                self._update_bg_particles()
+                self.menu_ticks += 1
                 self.draw_single_player_menu()
                 result = self.handle_single_menu_events()
             else:
-                result = 'menu'
+                # 未知状态，绘制主菜单防止白屏
+                self._update_bg_particles()
+                self.menu_ticks += 1
+                self.draw_main_menu()
+                result = self.handle_main_menu_events()
 
             if result and result not in ('menu', 'main_menu', 'single_menu'):
                 return result
