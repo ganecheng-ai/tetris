@@ -67,6 +67,9 @@ SOUND_ENABLED = True
 SOUND_VOLUME = 0.3
 MUSIC_VOLUME = 0.5
 
+# 音量设置文件
+VOLUME_SETTINGS_FILE = 'volume_settings.json'
+
 # 支持的皮肤列表
 SUPPORTED_SKINS = list(BLOCK_SKINS.keys())
 
@@ -211,16 +214,134 @@ LEVELS = [
 
 
 class SoundManager:
-    """音效管理器"""
+    """音效管理器 - 支持音效和背景音乐独立控制"""
 
     def __init__(self):
         self.enabled = SOUND_ENABLED
         self.sounds = {}
         self.music_loaded = False
+        self.music_playing = False
+        self.current_music_index = 0
+        self.music_playlist = []
+
+        # 独立音量控制
+        self.sound_volume = SOUND_VOLUME
+        self.music_volume = MUSIC_VOLUME
+
+        # 加载音量设置
+        self._load_volume_settings()
 
         if self.enabled:
             pygame.mixer.init()
             self._init_sounds()
+            self._init_music_playlist()
+
+    def _load_volume_settings(self):
+        """加载音量设置"""
+        try:
+            if os.path.exists(VOLUME_SETTINGS_FILE):
+                with open(VOLUME_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    self.sound_volume = settings.get('sound_volume', SOUND_VOLUME)
+                    self.music_volume = settings.get('music_volume', MUSIC_VOLUME)
+        except Exception as e:
+            print(f"加载音量设置失败：{e}")
+
+    def _save_volume_settings(self):
+        """保存音量设置"""
+        try:
+            with open(VOLUME_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'sound_volume': self.sound_volume,
+                    'music_volume': self.music_volume
+                }, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存音量设置失败：{e}")
+
+    def set_sound_volume(self, volume):
+        """设置音效音量 (0.0 - 1.0)"""
+        self.sound_volume = max(0.0, min(1.0, volume))
+        for sound in self.sounds.values():
+            sound.set_volume(self.sound_volume)
+        self._save_volume_settings()
+
+    def set_music_volume(self, volume):
+        """设置音乐音量 (0.0 - 1.0)"""
+        self.music_volume = max(0.0, min(1.0, volume))
+        if self.music_playing:
+            pygame.mixer.music.set_volume(self.music_volume)
+        self._save_volume_settings()
+
+    def toggle_music(self):
+        """切换背景音乐播放"""
+        if self.music_playing:
+            self.stop_music()
+        else:
+            self.play_music()
+
+    def _generate_music_track(self, track_id, duration=60):
+        """生成背景音乐曲目（程序生成的电子音乐）"""
+        try:
+            sample_rate = 22050
+            n_samples = int(sample_rate * duration)
+            buf = bytes()
+
+            # 不同曲目的音调和节奏
+            track_scales = [
+                [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88],  # C 大调
+                [293.66, 329.63, 369.99, 392.00, 440.00, 493.88, 587.33],  # D 大调
+                [329.63, 369.99, 415.30, 440.00, 493.88, 554.37, 659.25],  # E 大调
+                [277.18, 311.13, 349.23, 369.99, 415.30, 466.16, 554.37],  # 升 C 小调
+            ]
+            scale = track_scales[track_id % len(track_scales)]
+            tempo = 90 + (track_id * 10)  # BPM
+
+            for i in range(n_samples):
+                t = i / sample_rate
+                beat = (t * tempo / 60) % 1
+
+                # 低音节奏（每拍）
+                bass_freq = scale[0] / 2
+                bass = 0.3 * (1 if (int(t * tempo / 60 * 4) % 2) == 0 else -1)
+
+                # 和弦进行中音
+                chord_idx = int(t * tempo / 60 / 4) % len(scale)
+                chord_freq = scale[chord_idx]
+                chord = 0.2 * (0.5 if beat < 0.5 else -0.5)
+
+                # 高音旋律（随机但和谐）
+                melody_freq = scale[(track_id + int(t * 2)) % len(scale)]
+                melody = 0.15 * (0.3 if int(t * 8) % 2 == 0 else -0.3)
+
+                # 组合所有音轨
+                value = int(127 + 60 * (bass + chord + melody))
+                value = max(0, min(255, value))
+
+                # 包络（淡入淡出）
+                if i < n_samples * 0.01:
+                    value = int(127 + (value - 127) * (i / (n_samples * 0.01)))
+                elif i > n_samples * 0.99:
+                    value = int(127 + (value - 127) * ((n_samples - i) / (n_samples * 0.01)))
+
+                buf += bytes([value])
+
+            return buf
+        except Exception as e:
+            print(f"生成音乐失败：{e}")
+            return bytes([128] * sample_rate)
+
+    def _init_music_playlist(self):
+        """初始化背景音乐播放列表"""
+        try:
+            # 生成多首背景音乐
+            self.music_playlist = []
+            for i in range(4):
+                track_data = self._generate_music_track(i, duration=30)
+                self.music_playlist.append(track_data)
+            self.music_loaded = len(self.music_playlist) > 0
+        except Exception as e:
+            print(f"初始化音乐播放列表失败：{e}")
+            self.music_loaded = False
 
     def _init_sounds(self):
         """初始化音效（使用程序生成的声音）"""
@@ -231,14 +352,23 @@ class SoundManager:
             # 硬降音效 - 高频短音
             self.sounds['drop'] = self._generate_sound(400, 0.1, 'square')
 
+            # 软降/放置音效
+            self.sounds['place'] = self._generate_sound(350, 0.05, 'sine')
+
             # 消行音效 - 和弦效果
             self.sounds['clear'] = self._generate_sound(600, 0.2, 'sine')
 
             # 消多行音效 - 更长的音效
             self.sounds['clear_multi'] = self._generate_sound(800, 0.3, 'sine')
 
+            # Tetris 消除（4 行）特殊音效
+            self.sounds['tetris'] = self._generate_sound(1000, 0.5, 'sine')
+
             # 旋转音效
             self.sounds['rotate'] = self._generate_sound(300, 0.05, 'sine')
+
+            # 旋转失败音效
+            self.sounds['rotate_fail'] = self._generate_sound(200, 0.1, 'sawtooth')
 
             # 游戏结束音效
             self.sounds['gameover'] = self._generate_sound(200, 0.5, 'sawtooth')
@@ -246,9 +376,24 @@ class SoundManager:
             # 升级音效
             self.sounds['levelup'] = self._generate_sound(500, 0.4, 'sine')
 
+            # 暂停音效
+            self.sounds['pause'] = self._generate_sound(600, 0.15, 'sine')
+
+            # 选择/确认音效
+            self.sounds['select'] = self._generate_sound(700, 0.1, 'sine')
+
+            # 连击音效
+            self.sounds['combo'] = self._generate_sound(800, 0.2, 'sine')
+
+            # 攻击音效（双人对战）
+            self.sounds['attack'] = self._generate_sound(250, 0.3, 'sawtooth')
+
+            # 垃圾行警告音效
+            self.sounds['warning'] = self._generate_sound(180, 0.4, 'sawtooth')
+
             # 设置音量
             for sound in self.sounds.values():
-                sound.set_volume(SOUND_VOLUME)
+                sound.set_volume(self.sound_volume)
 
         except Exception as e:
             print(f"音效初始化失败：{e}")
@@ -300,15 +445,40 @@ class SoundManager:
 
     def play_clear(self, lines):
         """根据消除行数播放不同音效"""
-        if lines >= 2:
+        if lines >= 4:
+            self.play('tetris')
+        elif lines >= 2:
             self.play('clear_multi')
         else:
             self.play('clear')
+
+    def play_music(self):
+        """播放背景音乐"""
+        if self.enabled and self.music_loaded and self.music_playlist:
+            try:
+                # 加载当前音乐轨道
+                track_data = self.music_playlist[self.current_music_index]
+                import io
+                music_io = io.BytesIO(track_data)
+                pygame.mixer.music.load(music_io)
+                pygame.mixer.music.set_volume(self.music_volume)
+                pygame.mixer.music.play()
+                self.music_playing = True
+            except Exception as e:
+                print(f"播放音乐失败：{e}")
+                self.music_playing = False
 
     def stop_music(self):
         """停止背景音乐"""
         if self.enabled:
             pygame.mixer.music.stop()
+            self.music_playing = False
+
+    def next_music(self):
+        """播放下一首音乐"""
+        if self.music_playlist:
+            self.current_music_index = (self.current_music_index + 1) % len(self.music_playlist)
+            self.play_music()
 
 
 class HighScoreManager:
@@ -1242,10 +1412,52 @@ class TetrisGame:
             'P 暂停',
             'R 重新开始',
             'T 切换主题',
+            '1/2 音效音量',
+            '3/4 音乐音量',
+            'M 切换音乐',
         ]
         for i, text in enumerate(controls):
             rendered = self.font_small.render(text, True, theme['text_color'])
             self.screen.blit(rendered, (ui_x, 500 - ui_y_offset + i * 25))
+
+        # 音量显示
+        volume_y = 720 - ui_y_offset
+        sound_volume_bar = self._draw_volume_bar(ui_x, volume_y, '音效', self.sound_manager.sound_volume, theme)
+        music_volume_bar = self._draw_volume_bar(ui_x, volume_y + 30, '音乐', self.sound_manager.music_volume, theme)
+
+        # 音乐播放状态
+        if self.sound_manager.music_playing:
+            music_status = self.font_small.render('音乐：播放中', True, theme['accent_color'])
+        else:
+            music_status = self.font_small.render('音乐：已暂停', True, theme['text_color'])
+        self.screen.blit(music_status, (ui_x, volume_y + 60))
+
+    def _draw_volume_bar(self, x, y, label, volume, theme):
+        """绘制音量条"""
+        # 标签
+        label_text = self.font_small.render(f'{label}:', True, theme['text_color'])
+        self.screen.blit(label_text, (x, y))
+
+        # 音量条背景
+        bar_x = x + 50
+        bar_width = 100
+        bar_height = 15
+        pygame.draw.rect(self.screen, theme['grid_color'], (bar_x, y + 2, bar_width, bar_height))
+
+        # 音量条填充
+        fill_width = int(bar_width * volume)
+        if volume > 0.5:
+            bar_color = theme['accent_color']
+        elif volume > 0.2:
+            bar_color = (255, 200, 0)
+        else:
+            bar_color = (100, 200, 100)
+        pygame.draw.rect(self.screen, bar_color, (bar_x, y + 2, fill_width, bar_height))
+
+        # 边框
+        pygame.draw.rect(self.screen, theme['text_color'], (bar_x, y + 2, bar_width, bar_height), 1)
+
+        return (bar_x, y + 2, bar_width, bar_height)
 
     def draw_game_over(self):
         """绘制游戏结束画面"""
@@ -1398,11 +1610,38 @@ class TetrisGame:
                     self._switch_theme()
                     continue
 
+                # 音量控制
+                if event.key == pygame.K_1:
+                    # 降低音效音量
+                    new_volume = max(0.0, self.sound_manager.sound_volume - 0.1)
+                    self.sound_manager.set_sound_volume(new_volume)
+                    continue
+                if event.key == pygame.K_2:
+                    # 增加音效音量
+                    new_volume = min(1.0, self.sound_manager.sound_volume + 0.1)
+                    self.sound_manager.set_sound_volume(new_volume)
+                    continue
+                if event.key == pygame.K_3:
+                    # 降低音乐音量
+                    new_volume = max(0.0, self.sound_manager.music_volume - 0.1)
+                    self.sound_manager.set_music_volume(new_volume)
+                    continue
+                if event.key == pygame.K_4:
+                    # 增加音乐音量
+                    new_volume = min(1.0, self.sound_manager.music_volume + 0.1)
+                    self.sound_manager.set_music_volume(new_volume)
+                    continue
+                if event.key == pygame.K_m:
+                    # 切换背景音乐
+                    self.sound_manager.toggle_music()
+                    continue
+
                 if self.game_over or self.paused:
                     continue
 
                 if event.key == pygame.K_p:
                     self.paused = True
+                    self.sound_manager.play('pause')
                 elif event.key == pygame.K_LEFT:
                     self.move_block(-1, 0)
                 elif event.key == pygame.K_RIGHT:
@@ -1410,6 +1649,7 @@ class TetrisGame:
                 elif event.key == pygame.K_DOWN:
                     if self.move_block(0, 1):
                         self.score += 1
+                        self.sound_manager.play('place')
                 elif event.key == pygame.K_UP:
                     self.rotate_block()
                 elif event.key == pygame.K_SPACE:
@@ -1467,6 +1707,9 @@ class TetrisGame:
 
     def run(self):
         """游戏主循环"""
+        # 播放背景音乐
+        self.sound_manager.play_music()
+
         while self.running:
             self.handle_events()
             self.update()
@@ -2403,6 +2646,9 @@ class TetrisDualGame:
 
     def run(self):
         """双人对战主循环"""
+        # 播放背景音乐
+        self.sound_manager.play_music()
+
         while self.running:
             self.handle_events()
             self.update()
