@@ -159,6 +159,10 @@ GAME_MODES = {
     'endless': {'name': '无尽模式', 'desc': '无限挑战，速度越来越快'},
     'sprint': {'name': '竞速模式', 'desc': '尽快消除 40 行'},
     'ultra': {'name': '限时模式', 'desc': '2 分钟内获得最高分'},
+    'master': {'name': '大师模式', 'desc': '20 层关卡，极限挑战'},
+    'zen': {'name': '禅模式', 'desc': '无压力，放松体验'},
+    'challenge': {'name': '挑战模式', 'desc': '特殊规则挑战'},
+    'custom': {'name': '自定义模式', 'desc': '自定义游戏规则'},
 }
 
 # 无尽模式配置
@@ -349,6 +353,110 @@ LEVELS = [
     {'level': 9, 'speed': 200, 'lines': 90, 'name': '传奇'},
     {'level': 10, 'speed': 100, 'lines': 100, 'name': '方块之王'},
 ]
+
+# 大师模式关卡配置 (20 层，速度更快)
+MASTER_LEVELS = [
+    {'level': 1, 'speed': 800, 'lines': 5, 'name': '新手'},
+    {'level': 2, 'speed': 700, 'lines': 10, 'name': '入门'},
+    {'level': 3, 'speed': 600, 'lines': 15, 'name': '熟练'},
+    {'level': 4, 'speed': 500, 'lines': 20, 'name': '进阶'},
+    {'level': 5, 'speed': 400, 'lines': 25, 'name': '高手'},
+    {'level': 6, 'speed': 300, 'lines': 30, 'name': '专家'},
+    {'level': 7, 'speed': 250, 'lines': 35, 'name': '大师'},
+    {'level': 8, 'speed': 200, 'lines': 40, 'name': '宗师'},
+    {'level': 9, 'speed': 150, 'lines': 45, 'name': '传奇'},
+    {'level': 10, 'speed': 100, 'lines': 50, 'name': '方块大师'},
+    {'level': 11, 'speed': 80, 'lines': 55, 'name': '方块宗师'},
+    {'level': 12, 'speed': 70, 'lines': 60, 'name': '方块传奇'},
+    {'level': 13, 'speed': 60, 'lines': 65, 'name': '方块之神'},
+    {'level': 14, 'speed': 50, 'lines': 70, 'name': '方块圣者'},
+    {'level': 15, 'speed': 45, 'lines': 75, 'name': '方块尊者'},
+    {'level': 16, 'speed': 40, 'lines': 80, 'name': '方块王者'},
+    {'level': 17, 'speed': 35, 'lines': 85, 'name': '方块帝王'},
+    {'level': 18, 'speed': 30, 'lines': 90, 'name': '方块至尊'},
+    {'level': 19, 'speed': 25, 'lines': 95, 'name': '方块圣人'},
+    {'level': 20, 'speed': 20, 'lines': 100, 'name': '方块之神王'},
+]
+
+# 挑战模式配置
+CHALLENGE_CONFIGS = {
+    'no_hold': {'name': '无暂存', 'desc': '禁止使用暂存方块', 'hold_enabled': False},
+    'no_shadow': {'name': '无影子', 'desc': '不显示影子方块', 'shadow_enabled': False},
+    'blind': {'name': '盲目', 'desc': '不显示下一个方块', 'next_enabled': False},
+    'gravity_up': {'name': '反向重力', 'desc': '方块从下往上出现', 'gravity_up': True},
+    'fast_drop': {'name': '快速下落', 'desc': '方块自动快速下落', 'auto_drop': True},
+    'random_spin': {'name': '随机旋转', 'desc': '旋转方向随机', 'random_spin': True},
+}
+
+# 自定义规则配置
+CUSTOM_RULES_FILE = 'custom_rules.json'
+
+DEFAULT_CUSTOM_RULES = {
+    'hold_enabled': True,        # 是否启用暂存
+    'shadow_enabled': True,      # 是否显示影子方块
+    'next_enabled': True,        # 是否显示下一个方块
+    'next_count': 3,             # 预显示方块数量
+    'initial_level': 1,          # 初始关卡
+    'max_level': 10,             # 最大关卡
+    'gravity_type': 'normal',    # 重力类型：normal/fast/random
+    'rotation_system': 'SRS',    # 旋转系统：SRS/ARS
+    'bag_system': True,          # 是否使用 7-bag 随机系统
+    'ghost_block': True,         # 是否显示影子方块
+    'hard_drop_enabled': True,   # 是否允许硬降
+    'soft_drop_enabled': True,   # 是否允许软降
+    'wall_kick': True,           # 是否启用墙踢
+    'infinite_spin': False,      # 是否允许无限旋转
+    'combo_enabled': True,       # 是否启用连击系统
+    'scoring_classic': False,    # 是否使用经典计分
+    'target_lines': 100,         # 目标消除行数
+    'time_limit': None,          # 时间限制（秒），None 表示无限制
+    'garbage_enabled': False,    # 是否启用垃圾行（双人模式）
+}
+
+
+class CustomRulesManager:
+    """自定义规则管理器"""
+
+    def __init__(self):
+        self.rules = DEFAULT_CUSTOM_RULES.copy()
+        self._load_rules()
+
+    def _load_rules(self):
+        """加载自定义规则"""
+        try:
+            if os.path.exists(CUSTOM_RULES_FILE):
+                with open(CUSTOM_RULES_FILE, 'r', encoding='utf-8') as f:
+                    saved_rules = json.load(f)
+                    self.rules.update(saved_rules)
+        except Exception as e:
+            print(f"加载自定义规则失败：{e}")
+
+    def save_rules(self):
+        """保存自定义规则"""
+        try:
+            with open(CUSTOM_RULES_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.rules, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存自定义规则失败：{e}")
+
+    def reset_to_default(self):
+        """重置为默认规则"""
+        self.rules = DEFAULT_CUSTOM_RULES.copy()
+        self.save_rules()
+
+    def get_rule(self, key):
+        """获取规则值"""
+        return self.rules.get(key, DEFAULT_CUSTOM_RULES.get(key))
+
+    def set_rule(self, key, value):
+        """设置规则值"""
+        if key in self.rules:
+            self.rules[key] = value
+            self.save_rules()
+
+    def get_all_rules(self):
+        """获取所有规则"""
+        return self.rules.copy()
 
 
 class SoundManager:
@@ -1277,7 +1385,7 @@ class GameBoard:
 class TetrisGame:
     """游戏主类"""
 
-    def __init__(self, mode='classic'):
+    def __init__(self, mode='classic', custom_rules=None):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption('俄罗斯方块 - Tetris')
 
@@ -1292,10 +1400,14 @@ class TetrisGame:
         self.statistics_manager = StatisticsManager()
         self.online_manager = OnlineLeaderboardManager()
         self.cloud_save_manager = CloudSaveManager(self.online_manager)
+        self.custom_rules_manager = CustomRulesManager()
 
         # 游戏模式
         self.game_mode = mode
         self.mode_config = GAME_MODES.get(mode, GAME_MODES['classic'])
+
+        # 自定义规则（仅自定义模式使用）
+        self.custom_rules = custom_rules if custom_rules else DEFAULT_CUSTOM_RULES.copy()
 
         # 当前主题
         self.current_theme_name = 'classic'
@@ -1312,6 +1424,9 @@ class TetrisGame:
         self.sprint_target = 40  # 竞速模式目标行数
         self.ultra_time = 120  # 限时模式时间（秒）
         self.ultra_start_time = 0
+
+        # 大师模式特定变量
+        self.master_max_level = 20
 
         # 成就解锁状态
         self.new_achievements = []
@@ -1438,6 +1553,19 @@ class TetrisGame:
             self.ultra_game_over = False
         elif self.game_mode == 'endless':
             self.endless_level = 0
+        elif self.game_mode == 'master':
+            self.master_level = 0
+            self.master_start_time = pygame.time.get_ticks()
+        elif self.game_mode == 'zen':
+            self.zen_level = 1
+            self.zen_speed = 1000  # 禅模式固定速度，无压力
+        elif self.game_mode == 'challenge':
+            self.challenge_type = random.choice(list(CHALLENGE_CONFIGS.keys()))
+            self.challenge_config = CHALLENGE_CONFIGS[self.challenge_type]
+        elif self.game_mode == 'custom':
+            # 使用自定义规则
+            self.custom_rules = self.custom_rules_manager.get_all_rules()
+            self.level_index = self.custom_rules.get('initial_level', 1) - 1
 
         # 更新标题
         pygame.display.set_caption(f'俄罗斯方块 - Tetris - {self.mode_config["name"]}')
@@ -1682,6 +1810,49 @@ class TetrisGame:
                 self.sound_manager.play('levelup')
             return
 
+        if self.game_mode == 'master':
+            # 大师模式：20 层关卡
+            current_level = MASTER_LEVELS[self.level_index] if self.level_index < len(MASTER_LEVELS) else MASTER_LEVELS[-1]
+            if self.level_lines >= current_level['lines']:
+                if self.level_index < len(MASTER_LEVELS) - 1:
+                    self.level_index += 1
+                    self.level_lines = 0
+                    self.levelup_animation_frame = 0
+                    self.levelup_animation_text = f"大师模式 - 关卡 {self.level_index + 1} - {MASTER_LEVELS[self.level_index]['name']}"
+                    self.sound_manager.play('levelup')
+            return
+
+        if self.game_mode == 'zen':
+            # 禅模式：不升级，无压力
+            return
+
+        if self.game_mode == 'challenge':
+            # 挑战模式：根据挑战类型决定是否升级
+            if self.level_index < len(LEVELS) - 1:
+                current_level = LEVELS[self.level_index]
+                if self.level_lines >= current_level['lines']:
+                    self.level_index += 1
+                    self.level_lines = 0
+                    self.levelup_animation_frame = 0
+                    self.levelup_animation_text = f"挑战模式 - 关卡 {self.level_index + 1}"
+                    self.sound_manager.play('levelup')
+            return
+
+        if self.game_mode == 'custom':
+            # 自定义模式：根据自定义规则
+            max_level = self.custom_rules.get('max_level', 10)
+            target_lines = self.custom_rules.get('target_lines', 100)
+            lines_per_level = target_lines // max_level if max_level > 0 else 10
+
+            if self.level_lines >= lines_per_level:
+                if self.level_index < max_level - 1:
+                    self.level_index += 1
+                    self.level_lines = 0
+                    self.levelup_animation_frame = 0
+                    self.levelup_animation_text = f"自定义模式 - 关卡 {self.level_index + 1}"
+                    self.sound_manager.play('levelup')
+            return
+
         # 经典模式
         current_level = LEVELS[self.level_index]
         if self.level_lines >= current_level['lines']:
@@ -1711,6 +1882,29 @@ class TetrisGame:
             return max(50, base_speed - speed_decrease)
         elif self.game_mode == 'ultra':
             # 限时模式：根据关卡
+            level = min(self.level_index, len(LEVELS) - 1)
+            return LEVELS[level]['speed']
+        elif self.game_mode == 'master':
+            # 大师模式：使用大师关卡配置
+            level = min(self.level_index, len(MASTER_LEVELS) - 1)
+            return MASTER_LEVELS[level]['speed']
+        elif self.game_mode == 'zen':
+            # 禅模式：固定慢速，无压力
+            return self.zen_speed
+        elif self.game_mode == 'challenge':
+            # 挑战模式：根据挑战类型调整速度
+            base_speed = LEVELS[min(self.level_index, len(LEVELS) - 1)]['speed']
+            if self.challenge_config.get('fast_drop'):
+                return max(50, base_speed // 2)
+            return base_speed
+        elif self.game_mode == 'custom':
+            # 自定义模式：根据自定义规则
+            gravity = self.custom_rules.get('gravity_type', 'normal')
+            if gravity == 'fast':
+                return 100
+            elif gravity == 'random':
+                return random.randint(100, 500)
+            # normal - 使用经典速度
             level = min(self.level_index, len(LEVELS) - 1)
             return LEVELS[level]['speed']
         else:
@@ -2386,7 +2580,7 @@ class GameMenu:
         self.screen.blit(title, title_rect)
 
         # 版本信息
-        version = self.font_small.render('Version 2.2.0 - 音效增强', True, GRAY)
+        version = self.font_small.render('Version 2.5.0 - 更多游戏模式', True, GRAY)
         version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130))
         self.screen.blit(version, version_rect)
 
@@ -2442,6 +2636,10 @@ class GameMenu:
             ('endless', '无尽模式', '无限挑战，速度越来越快'),
             ('sprint', '竞速模式', '尽快消除 40 行'),
             ('ultra', '限时模式', '2 分钟内获得最高分'),
+            ('master', '大师模式', '20 层关卡，极限挑战'),
+            ('zen', '禅模式', '无压力，放松体验'),
+            ('challenge', '挑战模式', '特殊规则挑战'),
+            ('custom', '自定义模式', '自定义游戏规则'),
         ]
 
         for i, (mode_key, name, desc) in enumerate(mode_items):
@@ -2508,11 +2706,11 @@ class GameMenu:
                     self.selected_mode = 0
                     return 'main_menu'
                 elif event.key == pygame.K_UP:
-                    self.selected_mode = (self.selected_mode - 1) % 4
+                    self.selected_mode = (self.selected_mode - 1) % 8
                 elif event.key == pygame.K_DOWN:
-                    self.selected_mode = (self.selected_mode + 1) % 4
+                    self.selected_mode = (self.selected_mode + 1) % 8
                 elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    modes = ['classic', 'endless', 'sprint', 'ultra']
+                    modes = ['classic', 'endless', 'sprint', 'ultra', 'master', 'zen', 'challenge', 'custom']
                     return modes[self.selected_mode]
 
         return 'single_menu'
@@ -2542,7 +2740,7 @@ def main():
     menu = GameMenu()
     mode = menu.run()
 
-    if mode in ('classic', 'endless', 'sprint', 'ultra'):
+    if mode in ('classic', 'endless', 'sprint', 'ultra', 'master', 'zen', 'challenge', 'custom'):
         # 单人游戏模式
         game = TetrisGame(mode=mode)
         game.run()
