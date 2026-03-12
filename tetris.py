@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.2.0
+Version: 2.3.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -19,6 +19,9 @@ Features:
   - Particle effects system
   - Music playlist system
   - Statistics and achievements
+  - Enhanced line clear animations with explosions
+  - Background particle effects
+  - Unlockable block skins
 """
 
 import pygame
@@ -26,6 +29,7 @@ import random
 import sys
 import os
 import json
+import math
 
 # 初始化 pygame
 pygame.init()
@@ -93,6 +97,65 @@ SHAPES = {
           [1, 1, 1]],
 }
 
+
+class Particle:
+    """粒子类 - 用于华丽的视觉效果"""
+
+    def __init__(self, x, y, color, vx=None, vy=None, life=60, size=3, gravity=0.5):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.vx = vx if vx is not None else random.uniform(-3, 3)
+        self.vy = vy if vy is not None else random.uniform(-5, -1)
+        self.life = life
+        self.max_life = life
+        self.size = size
+        self.gravity = gravity
+        self.alpha = 255
+
+    def update(self):
+        """更新粒子状态"""
+        self.x += self.vx
+        self.y += self.vy
+        self.vy += self.gravity
+        self.life -= 1
+        self.alpha = int(255 * (self.life / self.max_life))
+        return self.life > 0
+
+    def draw(self, screen):
+        """绘制粒子"""
+        if self.life > 0:
+            # 创建半透明表面
+            s = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
+            color_with_alpha = (*self.color, self.alpha)
+            pygame.draw.circle(s, color_with_alpha, (self.size, self.size), self.size)
+            screen.blit(s, (int(self.x - self.size), int(self.y - self.size)))
+
+
+class Explosion:
+    """爆炸效果类 - 用于消行时的华丽效果"""
+
+    def __init__(self, x, y, color, particle_count=15):
+        self.particles = []
+        for _ in range(particle_count):
+            angle = random.uniform(0, 2 * 3.14159)
+            speed = random.uniform(2, 8)
+            vx = math.cos(angle) * speed
+            vy = math.sin(angle) * speed
+            size = random.randint(2, 5)
+            life = random.randint(30, 50)
+            self.particles.append(Particle(x, y, color, vx, vy, life, size))
+
+    def update(self):
+        """更新爆炸效果"""
+        self.particles = [p for p in self.particles if p.update()]
+        return len(self.particles) > 0
+
+    def draw(self, screen):
+        """绘制爆炸效果"""
+        for particle in self.particles:
+            particle.draw(screen)
+
 # 游戏模式
 GAME_MODES = {
     'classic': {'name': '经典模式', 'desc': '10 个关卡挑战'},
@@ -109,6 +172,7 @@ BLOCK_SKINS = {
     'default': {
         'name': '经典',
         'colors': COLORS,
+        'unlock_condition': None,  # 默认解锁
     },
     'neon': {
         'name': '霓虹',
@@ -121,6 +185,7 @@ BLOCK_SKINS = {
             'J': (50, 100, 255),
             'L': (255, 120, 0),
         },
+        'unlock_condition': {'type': 'score', 'value': 5000},
     },
     'pastel': {
         'name': '粉色',
@@ -133,6 +198,7 @@ BLOCK_SKINS = {
             'J': (176, 196, 222),
             'L': (255, 228, 181),
         },
+        'unlock_condition': {'type': 'lines', 'value': 50},
     },
     'gold': {
         'name': '黄金',
@@ -145,6 +211,72 @@ BLOCK_SKINS = {
             'J': (255, 210, 80),
             'L': (255, 190, 30),
         },
+        'unlock_condition': {'type': 'level', 'value': 5},
+    },
+    'ice': {
+        'name': '冰雪',
+        'colors': {
+            'I': (135, 206, 250),
+            'O': (173, 216, 230),
+            'T': (100, 149, 237),
+            'S': (64, 224, 208),
+            'Z': (70, 130, 180),
+            'J': (30, 144, 255),
+            'L': (0, 191, 255),
+        },
+        'unlock_condition': {'type': 'score', 'value': 10000},
+    },
+    'fire': {
+        'name': '火焰',
+        'colors': {
+            'I': (255, 69, 0),
+            'O': (255, 140, 0),
+            'T': (255, 99, 71),
+            'S': (255, 165, 0),
+            'Z': (255, 50, 50),
+            'J': (220, 20, 60),
+            'L': (255, 80, 0),
+        },
+        'unlock_condition': {'type': 'lines', 'value': 100},
+    },
+    'forest': {
+        'name': '森林',
+        'colors': {
+            'I': (34, 139, 34),
+            'O': (154, 205, 50),
+            'T': (107, 142, 35),
+            'S': (50, 205, 50),
+            'Z': (0, 100, 0),
+            'J': (46, 139, 87),
+            'L': (60, 179, 113),
+        },
+        'unlock_condition': {'type': 'level', 'value': 10},
+    },
+    'rainbow': {
+        'name': '彩虹',
+        'colors': {
+            'I': (255, 0, 0),
+            'O': (255, 127, 0),
+            'T': (255, 255, 0),
+            'S': (0, 255, 0),
+            'Z': (0, 0, 255),
+            'J': (75, 0, 130),
+            'L': (148, 0, 211),
+        },
+        'unlock_condition': {'type': 'combo', 'value': 15},
+    },
+    'crystal': {
+        'name': '水晶',
+        'colors': {
+            'I': (224, 176, 255),
+            'O': (255, 224, 176),
+            'T': (176, 224, 255),
+            'S': (176, 255, 224),
+            'Z': (255, 176, 224),
+            'J': (224, 255, 176),
+            'L': (255, 176, 176),
+        },
+        'unlock_condition': {'type': 'tetris', 'value': 10},
     },
 }
 
@@ -193,10 +325,16 @@ THEMES = {
 }
 
 # 消行动画帧数
-CLEAR_ANIMATION_FRAMES = 15
+CLEAR_ANIMATION_FRAMES = 20
 
 # 升级动画帧数
 LEVELUP_ANIMATION_FRAMES = 60
+
+# 粒子效果最大数量
+MAX_PARTICLES = 200
+
+# 背景动画帧率
+BG_ANIMATION_FPS = 60
 
 # 关卡配置 (速度，每关消除行数要求)
 LEVELS = [
@@ -583,6 +721,7 @@ class StatisticsManager:
     def __init__(self):
         self.stats = self._load_stats()
         self.achievements = self._load_achievements()
+        self.unlocked_skins = self._load_unlocked_skins()
         self.current_game_stats = {
             'lines_cleared': 0,
             'blocks_placed': 0,
@@ -635,6 +774,18 @@ class StatisticsManager:
         except Exception:
             return []
 
+    def _load_unlocked_skins(self):
+        """加载已解锁皮肤"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('unlocked_skins', ['default'])
+            return ['default']
+        except Exception:
+            return ['default']
+
     def save_stats(self):
         """保存统计数据"""
         try:
@@ -642,7 +793,8 @@ class StatisticsManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump({
                     'stats': self.stats,
-                    'achievements': self.achievements
+                    'achievements': self.achievements,
+                    'unlocked_skins': self.unlocked_skins
                 }, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
@@ -713,6 +865,38 @@ class StatisticsManager:
     def get_all_achievements(self):
         """获取所有成就"""
         return ACHIEVEMENTS
+
+    def check_skin_unlocks(self):
+        """检查并解锁新的皮肤"""
+        unlocked = []
+        for skin_id, skin_data in BLOCK_SKINS.items():
+            condition = skin_data.get('unlock_condition')
+            if condition is None:
+                continue  # 默认解锁的皮肤
+
+            # 检查解锁条件
+            unlocked_skin = False
+            if condition['type'] == 'score' and self.stats.get('total_score', 0) >= condition['value']:
+                unlocked_skin = True
+            elif condition['type'] == 'lines' and self.stats.get('total_lines', 0) >= condition['value']:
+                unlocked_skin = True
+            elif condition['type'] == 'level' and self.stats.get('max_level', 0) >= condition['value']:
+                unlocked_skin = True
+            elif condition['type'] == 'combo' and self.stats.get('max_combo', 0) >= condition['value']:
+                unlocked_skin = True
+            elif condition['type'] == 'tetris' and self.stats.get('total_tetrises', 0) >= condition['value']:
+                unlocked_skin = True
+
+            if unlocked_skin and skin_id not in self.unlocked_skins:
+                self.unlocked_skins.append(skin_id)
+                unlocked.append(skin_id)
+
+        return unlocked
+
+    def update_max_level(self, level):
+        """更新最高关卡"""
+        if level > self.stats.get('max_level', 0):
+            self.stats['max_level'] = level
 
 
 class Block:
@@ -854,6 +1038,12 @@ class TetrisGame:
 
         # 粒子效果
         self.particles = []
+        self.explosions = []  # 爆炸效果列表
+
+        # 背景动画
+        self.bg_animation_frame = 0
+        self.bg_particles = []  # 背景粒子
+        self._init_bg_particles()
 
     def _load_font(self, size):
         """加载字体，优先使用支持中文的字体"""
@@ -870,6 +1060,51 @@ class TetrisGame:
                 continue
         # 回退到默认字体
         return pygame.font.SysFont('arial', size)
+
+    def _init_bg_particles(self):
+        """初始化背景粒子"""
+        self.bg_particles = []
+        for _ in range(30):
+            x = random.randint(0, SCREEN_WIDTH)
+            y = random.randint(0, SCREEN_HEIGHT)
+            vx = random.uniform(-0.5, 0.5)
+            vy = random.uniform(0.2, 1)
+            size = random.randint(1, 3)
+            # 使用主题的强调色或白色
+            color = (*self.current_theme.get('accent_color', (255, 215, 0)), 100)
+            self.bg_particles.append(Particle(x, y, color, vx, vy, life=9999, size=size, gravity=0))
+
+    def _update_bg_particles(self):
+        """更新背景粒子"""
+        self.bg_animation_frame += 1
+
+        # 更新现有粒子
+        for particle in self.bg_particles:
+            particle.y += particle.vy
+            particle.x += particle.vx
+
+            # 超出屏幕重置到顶部
+            if particle.y > SCREEN_HEIGHT:
+                particle.y = -10
+                particle.x = random.randint(0, SCREEN_WIDTH)
+
+        # 限制粒子数量
+        if len(self.bg_particles) < 30 and random.random() < 0.05:
+            x = random.randint(0, SCREEN_WIDTH)
+            y = -10
+            vx = random.uniform(-0.5, 0.5)
+            vy = random.uniform(0.2, 1)
+            size = random.randint(1, 3)
+            color = (*self.current_theme.get('accent_color', (255, 215, 0)), 100)
+            self.bg_particles.append(Particle(x, y, color, vx, vy, life=9999, size=size, gravity=0))
+
+    def _draw_bg_particles(self):
+        """绘制背景粒子"""
+        for particle in self.bg_particles:
+            s = pygame.Surface((particle.size * 2, particle.size * 2), pygame.SRCALPHA)
+            color = (*self.current_theme.get('accent_color', (255, 215, 0)), 50)
+            pygame.draw.circle(s, color, (particle.size, particle.size), particle.size)
+            self.screen.blit(s, (int(particle.x - particle.size), int(particle.y - particle.size)))
 
     def reset_game(self):
         """重置游戏状态"""
@@ -894,7 +1129,13 @@ class TetrisGame:
         self.levelup_animation_text = ""
         self.combo_animation_frame = 0  # 连击动画帧
         self.particles = []
+        self.explosions = []  # 爆炸效果列表
         self.new_achievements = []
+
+        # 重置背景动画
+        self.bg_animation_frame = 0
+        self.bg_particles = []
+        self._init_bg_particles()
 
         # 重置统计
         self.statistics_manager.reset_game_stats()
@@ -1041,6 +1282,17 @@ class TetrisGame:
 
     def _clear_lines_with_animation(self):
         """执行消行动画并消除行"""
+        if self.clear_animation_frame == 1:
+            # 动画开始时创建爆炸效果
+            for y in self.clearing_lines:
+                # 为每个单元格创建爆炸效果
+                for x in range(GRID_WIDTH):
+                    cell_color = self.board.grid[y][x]
+                    if cell_color:
+                        cx = x * BLOCK_SIZE + BLOCK_SIZE // 2
+                        cy = y * BLOCK_SIZE + BLOCK_SIZE // 2
+                        self.explosions.append(Explosion(cx, cy, cell_color, particle_count=8))
+
         if self.clear_animation_frame >= CLEAR_ANIMATION_FRAMES:
             # 动画完成，实际消除行
             for y in sorted(self.clearing_lines, reverse=True):
@@ -1206,28 +1458,40 @@ class TetrisGame:
                            (draw_x + 2, draw_y + BLOCK_SIZE - 3), 2)
 
     def _draw_clear_animation(self):
-        """绘制消行动画"""
+        """绘制消行动画 - 华丽的爆炸效果"""
         progress = self.clear_animation_frame / CLEAR_ANIMATION_FRAMES
 
-        for y in self.clearing_lines:
-            # 计算闪烁效果
-            alpha = int(255 * (1 - progress))
-            flash_color = (255, 255, 255) if int(progress * 10) % 2 == 0 else (255, 200, 100)
+        # 绘制爆炸效果
+        for explosion in self.explosions:
+            explosion.draw(self.screen)
 
-            for x in range(GRID_WIDTH):
-                draw_x = x * BLOCK_SIZE
-                draw_y = y * BLOCK_SIZE
+        # 绘制闪电效果连接相邻的消除行
+        if len(self.clearing_lines) > 1 and progress < 0.6:
+            for i in range(len(self.clearing_lines) - 1):
+                y1 = self.clearing_lines[i] * BLOCK_SIZE + BLOCK_SIZE // 2
+                y2 = (self.clearing_lines[i + 1]) * BLOCK_SIZE
+                lightning_color = (255, 255, 255) if int(progress * 15) % 2 == 0 else (100, 200, 255)
+                for _ in range(3):
+                    start_x = random.randint(0, GRID_WIDTH * BLOCK_SIZE)
+                    points = [(start_x, y1)]
+                    for j in range(5):
+                        px = start_x + random.randint(-20, 20)
+                        py = y1 + (y2 - y1) * (j / 5)
+                        points.append((px, py))
+                    points.append((start_x + random.randint(-20, 20), y2))
+                    pygame.draw.lines(self.screen, lightning_color, False, points, 2)
 
-                # 绘制闪烁效果
-                pygame.draw.rect(self.screen, flash_color,
-                               (draw_x + 1, draw_y + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2))
-
-                # 粒子效果
-                if progress < 0.5:
-                    for _ in range(3):
-                        px = draw_x + random.randint(2, BLOCK_SIZE - 2)
-                        py = draw_y + random.randint(2, BLOCK_SIZE - 2)
-                        pygame.draw.circle(self.screen, (255, 255, 200), (px, py), 2)
+        # 绘制冲击波效果
+        if progress < 0.4:
+            for y in self.clearing_lines:
+                wave_y = y * BLOCK_SIZE + BLOCK_SIZE // 2
+                wave_alpha = int(255 * (1 - progress / 0.4))
+                wave_width = int(BLOCK_SIZE * GRID_WIDTH * (progress / 0.4))
+                wave_height = int(BLOCK_SIZE * (1 + progress * 2))
+                wave_surface = pygame.Surface((wave_width, wave_height), pygame.SRCALPHA)
+                wave_color = (255, 255, 255, wave_alpha)
+                pygame.draw.ellipse(wave_surface, wave_color, (0, 0, wave_width, wave_height))
+                self.screen.blit(wave_surface, (0, wave_y - wave_height // 2))
 
     def _draw_levelup_animation(self):
         """绘制升级动画"""
@@ -1559,6 +1823,9 @@ class TetrisGame:
         """绘制游戏画面"""
         self.screen.fill(self.current_theme['bg_color'])
 
+        # 绘制背景粒子
+        self._draw_bg_particles()
+
         # 绘制游戏区域
         self.draw_grid()
 
@@ -1671,6 +1938,12 @@ class TetrisGame:
 
     def update(self):
         """更新游戏状态"""
+        # 更新背景动画（即使在暂停或游戏结束时也更新）
+        self._update_bg_particles()
+
+        # 更新爆炸效果
+        self.explosions = [e for e in self.explosions if e.update()]
+
         if self.game_over or self.paused:
             return
 
