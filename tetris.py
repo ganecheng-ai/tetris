@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 2.0.0
+Version: 2.1.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -14,6 +14,11 @@ Features:
   - Hold block feature
   - Combo system
   - Local 2-player versus mode
+  - Endless mode, Sprint mode, Ultra mode
+  - Block skin system
+  - Particle effects system
+  - Music playlist system
+  - Statistics and achievements
 """
 
 import pygame
@@ -60,6 +65,10 @@ COLORS = {
 # 音效配置
 SOUND_ENABLED = True
 SOUND_VOLUME = 0.3
+MUSIC_VOLUME = 0.5
+
+# 支持的皮肤列表
+SUPPORTED_SKINS = list(BLOCK_SKINS.keys())
 
 # 最高分记录文件
 HIGH_SCORE_FILE = 'highscore.json'
@@ -79,6 +88,61 @@ SHAPES = {
           [1, 1, 1]],
     'L': [[0, 0, 1],
           [1, 1, 1]],
+}
+
+# 游戏模式
+GAME_MODES = {
+    'classic': {'name': '经典模式', 'desc': '10 个关卡挑战'},
+    'endless': {'name': '无尽模式', 'desc': '无限挑战，速度越来越快'},
+    'sprint': {'name': '竞速模式', 'desc': '尽快消除 40 行'},
+    'ultra': {'name': '限时模式', 'desc': '2 分钟内获得最高分'},
+}
+
+# 无尽模式配置
+ENDLESS_SPEEDS = [800, 700, 600, 500, 400, 300, 200, 150, 100, 80, 60, 50, 40, 30, 20]
+
+# 方块皮肤配置
+BLOCK_SKINS = {
+    'default': {
+        'name': '经典',
+        'colors': COLORS,
+    },
+    'neon': {
+        'name': '霓虹',
+        'colors': {
+            'I': (0, 255, 255),
+            'O': (255, 255, 0),
+            'T': (180, 0, 255),
+            'S': (0, 255, 100),
+            'Z': (255, 50, 50),
+            'J': (50, 100, 255),
+            'L': (255, 120, 0),
+        },
+    },
+    'pastel': {
+        'name': '粉色',
+        'colors': {
+            'I': (173, 216, 230),
+            'O': (255, 218, 185),
+            'T': (221, 160, 221),
+            'S': (144, 238, 144),
+            'Z': (255, 182, 193),
+            'J': (176, 196, 222),
+            'L': (255, 228, 181),
+        },
+    },
+    'gold': {
+        'name': '黄金',
+        'colors': {
+            'I': (255, 215, 0),
+            'O': (255, 223, 100),
+            'T': (255, 200, 50),
+            'S': (255, 230, 150),
+            'Z': (255, 180, 0),
+            'J': (255, 210, 80),
+            'L': (255, 190, 30),
+        },
+    },
 }
 
 # 游戏主题配置
@@ -269,66 +333,241 @@ class HighScoreManager:
             if os.path.exists(file_path):
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return data.get('high_scores', [])
+                    # 支持旧格式
+                    if isinstance(data, list):
+                        return {'classic': data}
+                    return data.get('modes', {'classic': []})
             else:
-                return []
+                return {'classic': []}
         except Exception as e:
             print(f"加载最高分失败：{e}")
-            return []
+            return {'classic': []}
 
     def save_high_scores(self):
         """保存最高分记录"""
         try:
             file_path = self._get_file_path()
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump({'high_scores': self.high_scores}, f, ensure_ascii=False, indent=2)
+                json.dump({'modes': self.high_scores}, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
             print(f"保存最高分失败：{e}")
             return False
 
-    def add_score(self, score, lines, level):
+    def add_score(self, score, lines, level, mode='classic', extra_data=None):
         """添加新的分数记录"""
+        if mode not in self.high_scores:
+            self.high_scores[mode] = []
+
         entry = {
             'score': score,
             'lines': lines,
             'level': level,
-            'date': pygame.time.get_ticks() // 1000
+            'date': pygame.time.get_ticks() // 1000,
         }
 
-        self.high_scores.append(entry)
+        if extra_data:
+            entry.update(extra_data)
+
+        self.high_scores[mode].append(entry)
 
         # 按分数排序，保留前 10 名
-        self.high_scores.sort(key=lambda x: x['score'], reverse=True)
-        self.high_scores = self.high_scores[:10]
+        self.high_scores[mode].sort(key=lambda x: x['score'], reverse=True)
+        self.high_scores[mode] = self.high_scores[mode][:10]
 
         self.save_high_scores()
 
         # 返回是否进入排行榜
-        return len(self.high_scores) > 0 and self.high_scores[-1] == entry
+        return len(self.high_scores[mode]) > 0 and self.high_scores[mode][-1] == entry
 
-    def get_high_scores(self):
+    def get_high_scores(self, mode='classic'):
         """获取最高分列表"""
-        return self.high_scores
+        return self.high_scores.get(mode, [])
 
-    def get_high_score(self):
+    def get_high_score(self, mode='classic'):
         """获取最高分"""
-        if self.high_scores:
-            return self.high_scores[0]['score']
+        scores = self.high_scores.get(mode, [])
+        if scores:
+            return scores[0]['score']
         return 0
+
+
+# 成就定义
+ACHIEVEMENTS = {
+    'first_game': {'name': '初次尝试', 'desc': '完成第一局游戏', 'icon': '🎮'},
+    'first_line': {'name': '首行消除', 'desc': '消除第一行', 'icon': '📏'},
+    'tetris': {'name': '俄罗斯方块!', 'desc': '一次性消除 4 行', 'icon': '🎉'},
+    'combo_5': {'name': '连击高手', 'desc': '达成 5 连击', 'icon': '🔥'},
+    'combo_10': {'name': '连击大师', 'desc': '达成 10 连击', 'icon': '⚡'},
+    'score_10000': {'name': '万分俱乐部', 'desc': '单局获得 10000 分', 'icon': '💎'},
+    'level_5': {'name': '进阶玩家', 'desc': '达到第 5 关', 'icon': '🏆'},
+    'level_10': {'name': '传奇玩家', 'desc': '达到第 10 关', 'icon': '👑'},
+    'sprint_fast': {'name': '速度之星', 'desc': '竞速模式 60 秒内完成', 'icon': '🚀'},
+    'endless_10': {'name': '持久战', 'desc': '无尽模式达到等级 10', 'icon': '∞'},
+}
+
+
+class StatisticsManager:
+    """游戏统计管理器"""
+
+    def __init__(self):
+        self.stats = self._load_stats()
+        self.achievements = self._load_achievements()
+        self.current_game_stats = {
+            'lines_cleared': 0,
+            'blocks_placed': 0,
+            'combos': 0,
+            'max_combo': 0,
+            'score': 0,
+        }
+
+    def _get_file_path(self):
+        """获取统计文件路径"""
+        if getattr(sys, 'frozen', False):
+            return os.path.join(os.path.dirname(sys.executable), 'stats.json')
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stats.json')
+
+    def _load_stats(self):
+        """加载统计数据"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('stats', {})
+            return self._get_default_stats()
+        except Exception as e:
+            print(f"加载统计失败：{e}")
+            return self._get_default_stats()
+
+    def _get_default_stats(self):
+        """获取默认统计数据"""
+        return {
+            'total_games': 0,
+            'total_lines': 0,
+            'total_score': 0,
+            'total_combos': 0,
+            'max_combo': 0,
+            'total_tetrises': 0,
+            'games_finished': 0,
+            'time_played': 0,
+        }
+
+    def _load_achievements(self):
+        """加载成就"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('achievements', [])
+            return []
+        except Exception:
+            return []
+
+    def save_stats(self):
+        """保存统计数据"""
+        try:
+            file_path = self._get_file_path()
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'stats': self.stats,
+                    'achievements': self.achievements
+                }, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"保存统计失败：{e}")
+            return False
+
+    def reset_game_stats(self):
+        """重置当前游戏统计"""
+        self.current_game_stats = {
+            'lines_cleared': 0,
+            'blocks_placed': 0,
+            'combos': 0,
+            'max_combo': 0,
+            'score': 0,
+        }
+
+    def add_line(self, count=1):
+        """添加消除行数"""
+        self.current_game_stats['lines_cleared'] += count
+        self.stats['total_lines'] += count
+
+    def add_block_placed(self):
+        """添加放置方块数"""
+        self.current_game_stats['blocks_placed'] += 1
+
+    def add_combo(self, combo_count):
+        """添加连击"""
+        if combo_count > 0:
+            self.current_game_stats['combos'] += 1
+            self.stats['total_combos'] += 1
+            if combo_count > self.current_game_stats['max_combo']:
+                self.current_game_stats['max_combo'] = combo_count
+            if combo_count > self.stats.get('max_combo', 0):
+                self.stats['max_combo'] = combo_count
+
+    def add_score(self, score):
+        """添加分数"""
+        self.current_game_stats['score'] += score
+        self.stats['total_score'] += score
+
+    def add_tetris(self):
+        """添加四行消除计数"""
+        self.stats['total_tetrises'] += 1
+
+    def finish_game(self, game_over=True):
+        """完成游戏统计"""
+        if game_over:
+            self.stats['total_games'] += 1
+        self.stats['games_finished'] += 1
+        self.save_stats()
+
+    def get_stats(self):
+        """获取统计数据"""
+        return self.stats
+
+    def unlock_achievement(self, achievement_id):
+        """解锁成就"""
+        if achievement_id not in self.achievements and achievement_id in ACHIEVEMENTS:
+            self.achievements.append(achievement_id)
+            self.save_stats()
+            return True
+        return False
+
+    def get_achievements(self):
+        """获取已解锁成就"""
+        return [(aid, ACHIEVEMENTS[aid]) for aid in self.achievements if aid in ACHIEVEMENTS]
+
+    def get_all_achievements(self):
+        """获取所有成就"""
+        return ACHIEVEMENTS
 
 
 class Block:
     """方块类"""
 
-    def __init__(self, shape_type=None):
+    def __init__(self, shape_type=None, skin='default'):
         if shape_type is None:
             shape_type = random.choice(list(SHAPES.keys()))
         self.shape_type = shape_type
         self.shape = [row[:] for row in SHAPES[shape_type]]
-        self.color = COLORS[shape_type]
+        self.skin = skin
+        self.color = self._get_color(skin)
         self.x = GRID_WIDTH // 2 - len(self.shape[0]) // 2
         self.y = 0
+
+    def _get_color(self, skin):
+        """根据皮肤获取颜色"""
+        if skin in BLOCK_SKINS and self.shape_type in BLOCK_SKINS[skin]['colors']:
+            return BLOCK_SKINS[skin]['colors'][self.shape_type]
+        return COLORS[self.shape_type]
+
+    def set_skin(self, skin):
+        """设置皮肤"""
+        self.skin = skin
+        self.color = self._get_color(skin)
 
     def rotate(self):
         """顺时针旋转方块"""
@@ -397,7 +636,7 @@ class GameBoard:
 class TetrisGame:
     """游戏主类"""
 
-    def __init__(self):
+    def __init__(self, mode='classic'):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption('俄罗斯方块 - Tetris')
 
@@ -409,10 +648,30 @@ class TetrisGame:
         # 初始化管理器
         self.sound_manager = SoundManager()
         self.high_score_manager = HighScoreManager()
+        self.statistics_manager = StatisticsManager()
+
+        # 游戏模式
+        self.game_mode = mode
+        self.mode_config = GAME_MODES.get(mode, GAME_MODES['classic'])
 
         # 当前主题
         self.current_theme_name = 'classic'
         self.current_theme = THEMES['classic']
+
+        # 当前皮肤
+        self.current_skin = 'default'
+
+        # 音量设置
+        self.music_volume = MUSIC_VOLUME
+        self.sound_volume = SOUND_VOLUME
+
+        # 竞速/限时模式特定变量
+        self.sprint_target = 40  # 竞速模式目标行数
+        self.ultra_time = 120  # 限时模式时间（秒）
+        self.ultra_start_time = 0
+
+        # 成就解锁状态
+        self.new_achievements = []
 
         self.clock = pygame.time.Clock()
         self.reset_game()
@@ -422,6 +681,9 @@ class TetrisGame:
         self.clear_animation_frame = 0
         self.levelup_animation_frame = 0
         self.levelup_animation_text = ""
+
+        # 粒子效果
+        self.particles = []
 
     def _load_font(self, size):
         """加载字体，优先使用支持中文的字体"""
@@ -442,8 +704,8 @@ class TetrisGame:
     def reset_game(self):
         """重置游戏状态"""
         self.board = GameBoard()
-        self.current_block = Block()
-        self.next_block = Block()
+        self.current_block = Block(skin=self.current_skin)
+        self.next_block = Block(skin=self.current_skin)
         self.hold_block = None  # 暂存的方块
         self.can_hold = True  # 每回合只能暂存一次
         self.score = 0
@@ -461,11 +723,29 @@ class TetrisGame:
         self.levelup_animation_frame = 0
         self.levelup_animation_text = ""
         self.combo_animation_frame = 0  # 连击动画帧
+        self.particles = []
+        self.new_achievements = []
+
+        # 重置统计
+        self.statistics_manager.reset_game_stats()
+
+        # 模式特定重置
+        if self.game_mode == 'sprint':
+            self.sprint_start_time = pygame.time.get_ticks()
+            self.sprint_finished = False
+        elif self.game_mode == 'ultra':
+            self.ultra_start_time = pygame.time.get_ticks()
+            self.ultra_game_over = False
+        elif self.game_mode == 'endless':
+            self.endless_level = 0
+
+        # 更新标题
+        pygame.display.set_caption(f'俄罗斯方块 - Tetris - {self.mode_config["name"]}')
 
     def spawn_block(self):
         """生成新方块"""
         self.current_block = self.next_block
-        self.next_block = Block()
+        self.next_block = Block(skin=self.current_skin)
         self.current_block.x = GRID_WIDTH // 2 - len(self.current_block.shape[0]) // 2
         self.current_block.y = 0
         self.can_hold = True  # 新方块生成后可以暂存
@@ -473,10 +753,44 @@ class TetrisGame:
         if not self.board.is_valid_position(self.current_block):
             self.game_over = True
             self.sound_manager.play('gameover')  # 播放游戏结束音效
-            # 记录最高分
-            self.high_score_manager.add_score(self.score, self.lines_cleared, self.level_index + 1)
-            if self.score > self.high_score_manager.get_high_score():
+
+            # 根据模式记录分数
+            if self.game_mode == 'sprint':
+                # 竞速模式记录完成时间
+                elapsed_time = (pygame.time.get_ticks() - self.sprint_start_time) / 1000
+                self.high_score_manager.add_score(
+                    self.score, self.lines_cleared, self.level_index + 1,
+                    mode='sprint', extra_data={'time': elapsed_time}
+                )
+            elif self.game_mode == 'ultra':
+                # 限时模式记录最终分数
+                self.high_score_manager.add_score(
+                    self.score, self.lines_cleared, self.level_index + 1,
+                    mode='ultra'
+                )
+            elif self.game_mode == 'endless':
+                # 无尽模式记录等级和分数
+                self.high_score_manager.add_score(
+                    self.score, self.lines_cleared, self.endless_level + 1,
+                    mode='endless'
+                )
+            else:
+                # 经典模式
+                self.high_score_manager.add_score(
+                    self.score, self.lines_cleared, self.level_index + 1,
+                    mode='classic'
+                )
+
+            if self.score > self.high_score_manager.get_high_score(mode=self.game_mode):
                 self.new_high_score = True
+
+            # 统计游戏结束
+            self.statistics_manager.finish_game(game_over=True)
+
+            # 成就检测
+            self.statistics_manager.unlock_achievement('first_game')
+            if self.score >= 10000:
+                self.statistics_manager.unlock_achievement('score_10000')
 
     def move_block(self, dx, dy):
         """移动方块"""
@@ -567,6 +881,9 @@ class TetrisGame:
             self.lines_cleared += lines
             self.level_lines += lines
 
+            # 更新统计
+            self.statistics_manager.add_line(lines)
+
             # 连击系统
             self.combo += 1
             combo_bonus = self.combo * 50 * (self.level_index + 1)
@@ -576,11 +893,32 @@ class TetrisGame:
             base_score = line_scores.get(lines, 0) * (self.level_index + 1)
             self.score += base_score + combo_bonus
 
+            # 更新统计
+            self.statistics_manager.add_score(base_score + combo_bonus)
+            self.statistics_manager.add_combo(self.combo - 1)
+
             # 播放消行音效
             self.sound_manager.play_clear(lines)
 
+            # 成就检测
+            if self.lines_cleared >= 1:
+                self.statistics_manager.unlock_achievement('first_line')
+            if lines == 4:
+                self.statistics_manager.add_tetris()
+                self.statistics_manager.unlock_achievement('tetris')
+            if self.combo >= 10:
+                self.statistics_manager.unlock_achievement('combo_10')
+            elif self.combo >= 5:
+                self.statistics_manager.unlock_achievement('combo_5')
+
             # 检查升级
             self._check_level_up()
+
+            # 检查竞速模式完成
+            if self.game_mode == 'sprint' and self.lines_cleared >= self.sprint_target:
+                self.sprint_finished = True
+                self.game_over = True
+                self.sound_manager.play('levelup')  # 播放完成音效
 
             self.clearing_lines = []
             self.clear_animation_frame = 0
@@ -589,12 +927,42 @@ class TetrisGame:
             if self.combo > 1:
                 self.combo_animation_frame = 30
 
-            self.spawn_block()
+            if not self.game_over:
+                self.spawn_block()
         else:
             self.clear_animation_frame += 1
 
     def _check_level_up(self):
         """检查是否升级"""
+        if self.game_mode == 'endless':
+            # 无尽模式：每消除 10 行升一级
+            new_level = self.lines_cleared // 10
+            if new_level > self.endless_level:
+                self.endless_level = new_level
+                self.levelup_animation_frame = 0
+                self.levelup_animation_text = f"无尽模式 - 等级 {self.endless_level + 1}"
+                self.sound_manager.play('levelup')
+
+                # 成就检测
+                if self.endless_level >= 9:
+                    self.statistics_manager.unlock_achievement('endless_10')
+            return
+
+        if self.game_mode == 'sprint':
+            # 竞速模式不升级
+            return
+
+        if self.game_mode == 'ultra':
+            # 限时模式：每消除 10 行升一级
+            new_level = self.lines_cleared // 10
+            if new_level > self.level_index:
+                self.level_index = new_level
+                self.levelup_animation_frame = 0
+                self.levelup_animation_text = f"关卡 {self.level_index + 1}"
+                self.sound_manager.play('levelup')
+            return
+
+        # 经典模式
         current_level = LEVELS[self.level_index]
         if self.level_lines >= current_level['lines']:
             if self.level_index < len(LEVELS) - 1:
@@ -602,11 +970,32 @@ class TetrisGame:
                 self.level_lines = 0
                 self.levelup_animation_frame = 0
                 self.levelup_animation_text = f"关卡 {self.level_index} - {LEVELS[self.level_index]['name']}"
-                self.sound_manager.play('levelup')  # 播放升级音效
+                self.sound_manager.play('levelup')
+
+                # 成就检测
+                if self.level_index >= 4:
+                    self.statistics_manager.unlock_achievement('level_5')
+                if self.level_index >= 9:
+                    self.statistics_manager.unlock_achievement('level_10')
 
     def get_current_speed(self):
         """获取当前下落速度"""
-        return LEVELS[self.level_index]['speed']
+        if self.game_mode == 'endless':
+            # 无尽模式：速度越来越快
+            level = min(self.endless_level, len(ENDLESS_SPEEDS) - 1)
+            return ENDLESS_SPEEDS[level]
+        elif self.game_mode == 'sprint':
+            # 竞速模式：固定速度，随消除行数加速
+            base_speed = 500
+            speed_decrease = self.lines_cleared * 10
+            return max(50, base_speed - speed_decrease)
+        elif self.game_mode == 'ultra':
+            # 限时模式：根据关卡
+            level = min(self.level_index, len(LEVELS) - 1)
+            return LEVELS[level]['speed']
+        else:
+            # 经典模式
+            return LEVELS[self.level_index]['speed']
 
     def _draw_block_cell(self, draw_x, draw_y, color):
         """绘制单个方块单元格，根据主题使用不同风格"""
@@ -802,15 +1191,45 @@ class TetrisGame:
         else:
             ui_y_offset = 0
 
-        # 关卡
-        current_level = LEVELS[self.level_index]
-        level_text = self.font_medium.render(f'关卡：{current_level["name"]}', True,theme['text_color'])
-        self.screen.blit(level_text, (ui_x, 420 - ui_y_offset))
+        # 根据模式显示不同信息
+        if self.game_mode == 'classic':
+            # 经典模式：显示关卡
+            current_level = LEVELS[self.level_index]
+            level_text = self.font_medium.render(f'关卡：{current_level["name"]}', True, theme['text_color'])
+            self.screen.blit(level_text, (ui_x, 420 - ui_y_offset))
 
-        # 升级进度
-        progress = f'{self.level_lines}/{current_level["lines"]}'
-        progress_text = self.font_small.render(f'升级：{progress}', True, theme['text_color'])
-        self.screen.blit(progress_text, (ui_x, 460 - ui_y_offset))
+            # 升级进度
+            progress = f'{self.level_lines}/{current_level["lines"]}'
+            progress_text = self.font_small.render(f'升级：{progress}', True, theme['text_color'])
+            self.screen.blit(progress_text, (ui_x, 460 - ui_y_offset))
+        elif self.game_mode == 'endless':
+            # 无尽模式：显示等级
+            level_text = self.font_medium.render(f'等级：{self.endless_level + 1}', True, theme['text_color'])
+            self.screen.blit(level_text, (ui_x, 420 - ui_y_offset))
+
+            # 升级进度
+            progress_to_next = self.lines_cleared % 10
+            progress_text = self.font_small.render(f'升级：{progress_to_next}/10', True, theme['text_color'])
+            self.screen.blit(progress_text, (ui_x, 460 - ui_y_offset))
+        elif self.game_mode == 'sprint':
+            # 竞速模式：显示剩余行数和用时
+            remaining = max(0, self.sprint_target - self.lines_cleared)
+            elapsed = (pygame.time.get_ticks() - self.sprint_start_time) / 1000
+            level_text = self.font_medium.render(f'剩余：{remaining} 行', True, theme['text_color'])
+            self.screen.blit(level_text, (ui_x, 420 - ui_y_offset))
+
+            time_text = self.font_small.render(f'用时：{elapsed:.1f}秒', True, theme['text_color'])
+            self.screen.blit(time_text, (ui_x, 460 - ui_y_offset))
+        elif self.game_mode == 'ultra':
+            # 限时模式：显示剩余时间
+            elapsed = (pygame.time.get_ticks() - self.ultra_start_time) / 1000
+            remaining = max(0, self.ultra_time - elapsed)
+            level_text = self.font_medium.render(f'剩余：{remaining:.1f}秒', True, theme['text_color'])
+            self.screen.blit(level_text, (ui_x, 420 - ui_y_offset))
+
+            # 目标
+            target_text = self.font_small.render(f'目标：最高分', True, theme['text_color'])
+            self.screen.blit(target_text, (ui_x, 460 - ui_y_offset))
 
         # 操作说明
         controls = [
@@ -836,9 +1255,20 @@ class TetrisGame:
         overlay.set_alpha(180)
         self.screen.blit(overlay, (0, 0))
 
-        game_over_text = self.font_large.render('游戏结束', True, theme['text_color'])
-        score_text = self.font_medium.render(f'最终分数：{self.score}', True, theme['text_color'])
-        restart_text = self.font_medium.render('按 R 重新开始', True, theme['text_color'])
+        # 根据模式显示不同文字
+        if self.game_mode == 'sprint':
+            elapsed = (pygame.time.get_ticks() - self.sprint_start_time) / 1000
+            game_over_text = self.font_large.render('挑战完成!', True, theme['accent_color'])
+            score_text = self.font_medium.render(f'分数：{self.score}', True, theme['text_color'])
+            time_text = self.font_medium.render(f'用时：{elapsed:.2f}秒', True, theme['text_color'])
+        elif self.game_mode == 'ultra':
+            game_over_text = self.font_large.render('时间到!', True, theme['accent_color'])
+            score_text = self.font_medium.render(f'最终分数：{self.score}', True, theme['text_color'])
+            time_text = None
+        else:
+            game_over_text = self.font_large.render('游戏结束', True, theme['text_color'])
+            score_text = self.font_medium.render(f'最终分数：{self.score}', True, theme['text_color'])
+            time_text = None
 
         self.screen.blit(game_over_text,
                         (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2,
@@ -847,26 +1277,29 @@ class TetrisGame:
                         (SCREEN_WIDTH // 2 - score_text.get_width() // 2,
                          SCREEN_HEIGHT // 2 - 30))
 
+        if time_text:
+            self.screen.blit(time_text,
+                            (SCREEN_WIDTH // 2 - time_text.get_width() // 2,
+                             SCREEN_HEIGHT // 2 + 10))
+
         # 显示最高分
-        high_score = self.high_score_manager.get_high_score()
+        high_score = self.high_score_manager.get_high_score(mode=self.game_mode)
         high_score_text = self.font_small.render(f'最高分：{high_score}', True, theme['text_color'])
         self.screen.blit(high_score_text,
                         (SCREEN_WIDTH // 2 - high_score_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 + 10))
+                         SCREEN_HEIGHT // 2 + 40))
 
         # 新高分提示
         if self.new_high_score:
             new_record_text = self.font_medium.render('新纪录!', True, (255, 215, 0))
             self.screen.blit(new_record_text,
                             (SCREEN_WIDTH // 2 - new_record_text.get_width() // 2,
-                             SCREEN_HEIGHT // 2 + 40))
-            self.screen.blit(restart_text,
-                            (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
-                             SCREEN_HEIGHT // 2 + 80))
-        else:
-            self.screen.blit(restart_text,
-                            (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
-                             SCREEN_HEIGHT // 2 + 50))
+                             SCREEN_HEIGHT // 2 + 70))
+
+        restart_text = self.font_medium.render('按 R 重新开始', True, theme['text_color'])
+        self.screen.blit(restart_text,
+                        (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
+                         SCREEN_HEIGHT // 2 + 110))
 
     def draw_pause(self):
         """绘制暂停画面"""
@@ -1001,6 +1434,21 @@ class TetrisGame:
         if self.game_over or self.paused:
             return
 
+        # 限时模式：检查时间
+        if self.game_mode == 'ultra':
+            current_time = pygame.time.get_ticks()
+            elapsed_time = (current_time - self.ultra_start_time) / 1000
+            if elapsed_time >= self.ultra_time:
+                self.game_over = True
+                self.ultra_game_over = True
+                self.sound_manager.play('gameover')
+                # 记录分数
+                self.high_score_manager.add_score(
+                    self.score, self.lines_cleared, self.level_index + 1,
+                    mode='ultra', extra_data={'time': elapsed_time}
+                )
+                return
+
         # 更新消行动画
         if self.clearing_lines:
             self._clear_lines_with_animation()
@@ -1042,7 +1490,8 @@ class GameMenu:
 
         self.current_theme = THEMES['classic']
         self.running = True
-        self.selected_mode = 0  # 0: 单人，1: 双人
+        self.menu_state = 'main'  # main, single, dual
+        self.selected_mode = 0
         self.clock = pygame.time.Clock()
 
     def _load_font(self, size):
@@ -1060,8 +1509,8 @@ class GameMenu:
                 continue
         return pygame.font.SysFont('arial', size)
 
-    def draw(self):
-        """绘制菜单"""
+    def draw_main_menu(self):
+        """绘制主菜单"""
         self.screen.fill(self.current_theme['bg_color'])
 
         # 标题
@@ -1070,19 +1519,19 @@ class GameMenu:
         self.screen.blit(title, title_rect)
 
         # 版本信息
-        version = self.font_small.render('Version 2.0.0 - 双人对战版', True, GRAY)
+        version = self.font_small.render('Version 2.1.0 - 多种游戏模式', True, GRAY)
         version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130))
         self.screen.blit(version, version_rect)
 
         # 菜单选项
         menu_items = [
-            ('单人模式', '经典单人游戏，10 个关卡'),
+            ('单人游戏', '选择单人游戏模式'),
             ('双人对战', '本地双人对战，互相攻击'),
             ('退出游戏', ''),
         ]
 
         for i, (name, desc) in enumerate(menu_items):
-            y = 220 + i * 80
+            y = 200 + i * 80
             is_selected = (i == self.selected_mode)
 
             # 选项背景
@@ -1107,12 +1556,55 @@ class GameMenu:
         ]
         for i, text in enumerate(controls):
             rendered = self.font_small.render(text, True, (150, 150, 150))
-            self.screen.blit(rendered, (SCREEN_WIDTH // 2 - rendered.get_width() // 2, 480 + i * 25))
+            self.screen.blit(rendered, (SCREEN_WIDTH // 2 - rendered.get_width() // 2, 450 + i * 25))
 
         pygame.display.flip()
 
-    def handle_events(self):
-        """处理事件"""
+    def draw_single_player_menu(self):
+        """绘制单人游戏模式选择菜单"""
+        self.screen.fill(self.current_theme['bg_color'])
+
+        # 标题
+        title = self.font_large.render('单人游戏', True, self.current_theme['accent_color'])
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 60))
+        self.screen.blit(title, title_rect)
+
+        # 模式选项
+        mode_items = [
+            ('classic', '经典模式', '10 个关卡挑战'),
+            ('endless', '无尽模式', '无限挑战，速度越来越快'),
+            ('sprint', '竞速模式', '尽快消除 40 行'),
+            ('ultra', '限时模式', '2 分钟内获得最高分'),
+        ]
+
+        for i, (mode_key, name, desc) in enumerate(mode_items):
+            y = 140 + i * 90
+            is_selected = (i == self.selected_mode)
+
+            # 选项背景
+            if is_selected:
+                pygame.draw.rect(self.screen, (50, 50, 80), (SCREEN_WIDTH // 2 - 220, y - 40, 440, 70))
+
+            # 选项文字
+            color = self.current_theme['accent_color'] if is_selected else WHITE
+            text = self.font_medium.render(name, True, color)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, y))
+            self.screen.blit(text, text_rect)
+
+            # 描述文字
+            desc_text = self.font_small.render(desc, True, GRAY)
+            desc_rect = desc_text.get_rect(center=(SCREEN_WIDTH // 2, y + 35))
+            self.screen.blit(desc_text, desc_rect)
+
+        # 返回提示
+        back_text = self.font_small.render('按 ESC 返回主菜单', True, (150, 150, 150))
+        back_rect = back_text.get_rect(center=(SCREEN_WIDTH // 2, 520))
+        self.screen.blit(back_text, back_rect)
+
+        pygame.display.flip()
+
+    def handle_main_menu_events(self):
+        """处理主菜单事件"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -1125,7 +1617,9 @@ class GameMenu:
                     self.selected_mode = (self.selected_mode + 1) % 3
                 elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
                     if self.selected_mode == 0:
-                        return 'single'
+                        self.menu_state = 'single'
+                        self.selected_mode = 0
+                        return 'single_menu'
                     elif self.selected_mode == 1:
                         return 'dual'
                     else:
@@ -1134,14 +1628,42 @@ class GameMenu:
 
         return 'menu'
 
+    def handle_single_menu_events(self):
+        """处理单人游戏菜单事件"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+                return None
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.menu_state = 'main'
+                    self.selected_mode = 0
+                    return 'main_menu'
+                elif event.key == pygame.K_UP:
+                    self.selected_mode = (self.selected_mode - 1) % 4
+                elif event.key == pygame.K_DOWN:
+                    self.selected_mode = (self.selected_mode + 1) % 4
+                elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    modes = ['classic', 'endless', 'sprint', 'ultra']
+                    return modes[self.selected_mode]
+
+        return 'single_menu'
+
     def run(self):
         """运行菜单循环"""
         while self.running:
-            result = self.handle_events()
-            if result != 'menu':
+            if self.menu_state == 'main':
+                self.draw_main_menu()
+                result = self.handle_main_menu_events()
+            elif self.menu_state == 'single':
+                self.draw_single_player_menu()
+                result = self.handle_single_menu_events()
+            else:
+                result = 'menu'
+
+            if result and result not in ('menu', 'main_menu', 'single_menu'):
                 return result
-            self.draw()
-            self.clock.tick(60)
 
         pygame.quit()
         return None
@@ -1153,9 +1675,9 @@ def main():
     menu = GameMenu()
     mode = menu.run()
 
-    if mode == 'single':
-        # 单人模式
-        game = TetrisGame()
+    if mode in ('classic', 'endless', 'sprint', 'ultra'):
+        # 单人游戏模式
+        game = TetrisGame(mode=mode)
         game.run()
     elif mode == 'dual':
         # 双人对战模式
