@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 1.3.0
+Version: 2.0.0
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -13,6 +13,7 @@ Features:
   - Multiple game themes
   - Hold block feature
   - Combo system
+  - Local 2-player versus mode
 """
 
 import pygame
@@ -31,6 +32,13 @@ GRID_WIDTH = 10
 GRID_HEIGHT = 20
 SCREEN_WIDTH = BLOCK_SIZE * (GRID_WIDTH + 12)
 SCREEN_HEIGHT = BLOCK_SIZE * GRID_HEIGHT
+
+# 双人模式常量
+DUAL_BLOCK_SIZE = 25
+DUAL_GRID_WIDTH = 10
+DUAL_GRID_HEIGHT = 20
+DUAL_SCREEN_WIDTH = DUAL_BLOCK_SIZE * (DUAL_GRID_WIDTH * 2 + 8)
+DUAL_SCREEN_HEIGHT = DUAL_BLOCK_SIZE * DUAL_GRID_HEIGHT
 
 # 颜色定义
 BLACK = (0, 0, 0)
@@ -1021,10 +1029,866 @@ class TetrisGame:
         sys.exit()
 
 
+class GameMenu:
+    """游戏主菜单"""
+
+    def __init__(self):
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption('俄罗斯方块 - 主菜单')
+
+        self.font_large = self._load_font(48)
+        self.font_medium = self._load_font(32)
+        self.font_small = self._load_font(20)
+
+        self.current_theme = THEMES['classic']
+        self.running = True
+        self.selected_mode = 0  # 0: 单人，1: 双人
+        self.clock = pygame.time.Clock()
+
+    def _load_font(self, size):
+        """加载字体"""
+        font_paths = [
+            'C:/Windows/Fonts/simsun.ttc',
+            'C:/Windows/Fonts/msyh.ttc',
+            '/System/Library/Fonts/PingFang.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+        ]
+        for path in font_paths:
+            try:
+                return pygame.font.Font(path, size)
+            except:
+                continue
+        return pygame.font.SysFont('arial', size)
+
+    def draw(self):
+        """绘制菜单"""
+        self.screen.fill(self.current_theme['bg_color'])
+
+        # 标题
+        title = self.font_large.render('俄罗斯方块', True, self.current_theme['accent_color'])
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 80))
+        self.screen.blit(title, title_rect)
+
+        # 版本信息
+        version = self.font_small.render('Version 2.0.0 - 双人对战版', True, GRAY)
+        version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130))
+        self.screen.blit(version, version_rect)
+
+        # 菜单选项
+        menu_items = [
+            ('单人模式', '经典单人游戏，10 个关卡'),
+            ('双人对战', '本地双人对战，互相攻击'),
+            ('退出游戏', ''),
+        ]
+
+        for i, (name, desc) in enumerate(menu_items):
+            y = 220 + i * 80
+            is_selected = (i == self.selected_mode)
+
+            # 选项背景
+            if is_selected:
+                pygame.draw.rect(self.screen, (50, 50, 80), (SCREEN_WIDTH // 2 - 200, y - 30, 400, 60))
+
+            # 选项文字
+            color = self.current_theme['accent_color'] if is_selected else WHITE
+            text = self.font_medium.render(name, True, color)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, y))
+            self.screen.blit(text, text_rect)
+
+            # 描述文字
+            if desc:
+                desc_text = self.font_small.render(desc, True, GRAY)
+                desc_rect = desc_text.get_rect(center=(SCREEN_WIDTH // 2, y + 35))
+                self.screen.blit(desc_text, desc_rect)
+
+        # 操作说明
+        controls = [
+            '使用 ↑ ↓ 键选择，按 空格键 或 Enter 确认',
+        ]
+        for i, text in enumerate(controls):
+            rendered = self.font_small.render(text, True, (150, 150, 150))
+            self.screen.blit(rendered, (SCREEN_WIDTH // 2 - rendered.get_width() // 2, 480 + i * 25))
+
+        pygame.display.flip()
+
+    def handle_events(self):
+        """处理事件"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+                return None
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP:
+                    self.selected_mode = (self.selected_mode - 1) % 3
+                elif event.key == pygame.K_DOWN:
+                    self.selected_mode = (self.selected_mode + 1) % 3
+                elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    if self.selected_mode == 0:
+                        return 'single'
+                    elif self.selected_mode == 1:
+                        return 'dual'
+                    else:
+                        self.running = False
+                        return None
+
+        return 'menu'
+
+    def run(self):
+        """运行菜单循环"""
+        while self.running:
+            result = self.handle_events()
+            if result != 'menu':
+                return result
+            self.draw()
+            self.clock.tick(60)
+
+        pygame.quit()
+        return None
+
+
 def main():
     """主函数"""
-    game = TetrisGame()
-    game.run()
+    # 显示主菜单
+    menu = GameMenu()
+    mode = menu.run()
+
+    if mode == 'single':
+        # 单人模式
+        game = TetrisGame()
+        game.run()
+    elif mode == 'dual':
+        # 双人对战模式
+        dual_game = TetrisDualGame()
+        dual_game.run()
+    else:
+        # 退出
+        pygame.quit()
+        sys.exit()
+
+
+class TetrisDualGame:
+    """双人对战游戏类"""
+
+    def __init__(self):
+        self.screen = pygame.display.set_mode((DUAL_SCREEN_WIDTH, DUAL_SCREEN_HEIGHT))
+        pygame.display.set_caption('俄罗斯方块 - 双人对战')
+
+        # 加载中文字体
+        self.font_large = self._load_font(32)
+        self.font_medium = self._load_font(20)
+        self.font_small = self._load_font(14)
+
+        # 初始化管理器
+        self.sound_manager = SoundManager()
+
+        # 当前主题
+        self.current_theme_name = 'classic'
+        self.current_theme = THEMES['classic']
+
+        self.clock = pygame.time.Clock()
+        self.reset_game()
+
+        # 动画状态
+        self.clearing_lines_p1 = []
+        self.clearing_lines_p2 = []
+        self.clear_animation_frame_p1 = 0
+        self.clear_animation_frame_p2 = 0
+
+    def _load_font(self, size):
+        """加载字体，优先使用支持中文的字体"""
+        font_paths = [
+            'C:/Windows/Fonts/simsun.ttc',
+            'C:/Windows/Fonts/msyh.ttc',
+            '/System/Library/Fonts/PingFang.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+        ]
+        for path in font_paths:
+            try:
+                return pygame.font.Font(path, size)
+            except:
+                continue
+        return pygame.font.SysFont('arial', size)
+
+    def reset_game(self):
+        """重置双人对战状态"""
+        # 玩家 1（左侧）
+        self.board_p1 = GameBoard()
+        self.current_block_p1 = Block()
+        self.next_block_p1 = Block()
+        self.hold_block_p1 = None
+        self.can_hold_p1 = True
+        self.score_p1 = 0
+        self.lines_cleared_p1 = 0
+        self.combo_p1 = 0
+        self.game_over_p1 = False
+
+        # 玩家 2（右侧）
+        self.board_p2 = GameBoard()
+        self.current_block_p2 = Block()
+        self.next_block_p2 = Block()
+        self.hold_block_p2 = None
+        self.can_hold_p2 = True
+        self.score_p2 = 0
+        self.lines_cleared_p2 = 0
+        self.combo_p2 = 0
+        self.game_over_p2 = False
+
+        # 游戏状态
+        self.paused = False
+        self.winner = None  # 'p1' 或 'p2'
+        self.running = True
+        self.last_fall_time_p1 = pygame.time.get_ticks()
+        self.last_fall_time_p2 = pygame.time.get_ticks()
+        self.speed_p1 = 1000  # 玩家 1 速度
+        self.speed_p2 = 1000  # 玩家 2 速度
+
+        # 攻击/垃圾行系统
+        self.pending_garbage_p1 = 0  # 玩家 1 待接收的垃圾行
+        self.pending_garbage_p2 = 0  # 玩家 2 待接收的垃圾行
+
+        # 动画状态
+        self.clearing_lines_p1 = []
+        self.clearing_lines_p2 = []
+        self.clear_animation_frame_p1 = 0
+        self.clear_animation_frame_p2 = 0
+        self.attack_animation_p1 = 0
+        self.attack_animation_p2 = 0
+
+    def spawn_block_p1(self):
+        """生成玩家 1 新方块"""
+        self.current_block_p1 = self.next_block_p1
+        self.next_block_p1 = Block()
+        self.current_block_p1.x = DUAL_GRID_WIDTH // 2 - len(self.current_block_p1.shape[0]) // 2
+        self.current_block_p1.y = 0
+        self.can_hold_p1 = True
+
+        if not self.board_p1.is_valid_position(self.current_block_p1):
+            self.game_over_p1 = True
+            self.winner = 'p2'
+            self.sound_manager.play('gameover')
+
+    def spawn_block_p2(self):
+        """生成玩家 2 新方块"""
+        self.current_block_p2 = self.next_block_p2
+        self.next_block_p2 = Block()
+        self.current_block_p2.x = DUAL_GRID_WIDTH // 2 - len(self.current_block_p2.shape[0]) // 2
+        self.current_block_p2.y = 0
+        self.can_hold_p2 = True
+
+        if not self.board_p2.is_valid_position(self.current_block_p2):
+            self.game_over_p2 = True
+            self.winner = 'p1'
+            self.sound_manager.play('gameover')
+
+    def move_block_p1(self, dx, dy):
+        """移动玩家 1 方块"""
+        if self.board_p1.is_valid_position(self.current_block_p1, offset_x=dx, offset_y=dy):
+            self.current_block_p1.x += dx
+            self.current_block_p1.y += dy
+            return True
+        return False
+
+    def move_block_p2(self, dx, dy):
+        """移动玩家 2 方块"""
+        if self.board_p2.is_valid_position(self.current_block_p2, offset_x=dx, offset_y=dy):
+            self.current_block_p2.x += dx
+            self.current_block_p2.y += dy
+            return True
+        return False
+
+    def rotate_block_p1(self):
+        """旋转玩家 1 方块"""
+        original_shape = self.current_block_p1.shape
+        self.current_block_p1.shape = self.current_block_p1.rotate()
+
+        if not self.board_p1.is_valid_position(self.current_block_p1):
+            if self.board_p1.is_valid_position(self.current_block_p1, offset_x=-1, offset_y=0):
+                self.current_block_p1.x -= 1
+            elif self.board_p1.is_valid_position(self.current_block_p1, offset_x=1, offset_y=0):
+                self.current_block_p1.x += 1
+            elif self.board_p1.is_valid_position(self.current_block_p1, offset_x=-2, offset_y=0):
+                self.current_block_p1.x -= 2
+            elif self.board_p1.is_valid_position(self.current_block_p1, offset_x=2, offset_y=0):
+                self.current_block_p1.x += 2
+            else:
+                self.current_block_p1.shape = original_shape
+                return
+
+        self.sound_manager.play('rotate')
+
+    def rotate_block_p2(self):
+        """旋转玩家 2 方块"""
+        original_shape = self.current_block_p2.shape
+        self.current_block_p2.shape = self.current_block_p2.rotate()
+
+        if not self.board_p2.is_valid_position(self.current_block_p2):
+            if self.board_p2.is_valid_position(self.current_block_p2, offset_x=-1, offset_y=0):
+                self.current_block_p2.x -= 1
+            elif self.board_p2.is_valid_position(self.current_block_p2, offset_x=1, offset_y=0):
+                self.current_block_p2.x += 1
+            elif self.board_p2.is_valid_position(self.current_block_p2, offset_x=-2, offset_y=0):
+                self.current_block_p2.x -= 2
+            elif self.board_p2.is_valid_position(self.current_block_p2, offset_x=2, offset_y=0):
+                self.current_block_p2.x += 2
+            else:
+                self.current_block_p2.shape = original_shape
+                return
+
+        self.sound_manager.play('rotate')
+
+    def hard_drop_p1(self):
+        """玩家 1 硬降方块"""
+        drop_distance = 0
+        while self.move_block_p1(0, 1):
+            drop_distance += 1
+        self.score_p1 += drop_distance * 2
+        self.sound_manager.play('drop')
+        self.lock_current_block_p1()
+
+    def hard_drop_p2(self):
+        """玩家 2 硬降方块"""
+        drop_distance = 0
+        while self.move_block_p2(0, 1):
+            drop_distance += 1
+        self.score_p2 += drop_distance * 2
+        self.sound_manager.play('drop')
+        self.lock_current_block_p2()
+
+    def hold_block_p1(self):
+        """玩家 1 暂存方块"""
+        if not self.can_hold_p1:
+            return
+
+        if self.hold_block_p1 is None:
+            self.hold_block_p1 = Block(self.current_block_p1.shape_type)
+            self.spawn_block_p1()
+        else:
+            current_type = self.current_block_p1.shape_type
+            self.current_block_p1 = Block(self.hold_block_p1.shape_type)
+            self.hold_block_p1 = Block(current_type)
+            self.current_block_p1.x = DUAL_GRID_WIDTH // 2 - len(self.current_block_p1.shape[0]) // 2
+            self.current_block_p1.y = 0
+
+        self.can_hold_p1 = False
+        self.sound_manager.play('rotate')
+
+    def hold_block_p2(self):
+        """玩家 2 暂存方块"""
+        if not self.can_hold_p2:
+            return
+
+        if self.hold_block_p2 is None:
+            self.hold_block_p2 = Block(self.current_block_p2.shape_type)
+            self.spawn_block_p2()
+        else:
+            current_type = self.current_block_p2.shape_type
+            self.current_block_p2 = Block(self.hold_block_p2.shape_type)
+            self.hold_block_p2 = Block(current_type)
+            self.current_block_p2.x = DUAL_GRID_WIDTH // 2 - len(self.current_block_p2.shape[0]) // 2
+            self.current_block_p2.y = 0
+
+        self.can_hold_p2 = False
+        self.sound_manager.play('rotate')
+
+    def calculate_attack_lines(self, lines, combo):
+        """计算攻击行数（基于消除行数和连击）"""
+        attack = 0
+        if lines == 1:
+            attack = 0
+        elif lines == 2:
+            attack = 1
+        elif lines == 3:
+            attack = 2
+        elif lines == 4:
+            attack = 4
+        # 连击 bonus
+        if combo > 0:
+            attack += min(combo, 5)  # 最多额外 5 行
+        return attack
+
+    def lock_current_block_p1(self):
+        """锁定玩家 1 当前方块"""
+        self.board_p1.lock_block(self.current_block_p1)
+        lines = self._get_full_lines_p1()
+
+        if lines:
+            self.clearing_lines_p1 = lines
+            self.clear_animation_frame_p1 = 0
+            # 计算攻击
+            attack = self.calculate_attack_lines(len(lines), self.combo_p1 + 1)
+            if attack > 0:
+                self.pending_garbage_p2 += attack
+                self.attack_animation_p1 = 20
+        else:
+            self.combo_p1 = 0
+            self.spawn_block_p1()
+
+    def lock_current_block_p2(self):
+        """锁定玩家 2 当前方块"""
+        self.board_p2.lock_block(self.current_block_p2)
+        lines = self._get_full_lines_p2()
+
+        if lines:
+            self.clearing_lines_p2 = lines
+            self.clear_animation_frame_p2 = 0
+            # 计算攻击
+            attack = self.calculate_attack_lines(len(lines), self.combo_p2 + 1)
+            if attack > 0:
+                self.pending_garbage_p1 += attack
+                self.attack_animation_p2 = 20
+        else:
+            self.combo_p2 = 0
+            self.spawn_block_p2()
+
+    def _get_full_lines_p1(self):
+        """获取玩家 1 所有满行的索引"""
+        full_lines = []
+        for y in range(DUAL_GRID_HEIGHT):
+            if all(self.board_p1.grid[y]):
+                full_lines.append(y)
+        return full_lines
+
+    def _get_full_lines_p2(self):
+        """获取玩家 2 所有满行的索引"""
+        full_lines = []
+        for y in range(DUAL_GRID_HEIGHT):
+            if all(self.board_p2.grid[y]):
+                full_lines.append(y)
+        return full_lines
+
+    def add_garbage_lines(self, player, count):
+        """添加垃圾行到指定玩家"""
+        board = self.board_p1 if player == 'p1' else self.board_p2
+        for _ in range(min(count, 10)):  # 最多一次加 10 行
+            # 删除最上面一行
+            del board.grid[0]
+            # 在底部添加一行带随机缺口的垃圾行
+            gap = random.randint(0, DUAL_GRID_WIDTH - 1)
+            garbage_row = [GRAY for _ in range(DUAL_GRID_WIDTH)]
+            garbage_row[gap] = None
+            board.grid.append(garbage_row)
+
+    def _clear_lines_with_animation_p1(self):
+        """执行玩家 1 消行动画并消除行"""
+        if self.clear_animation_frame_p1 >= CLEAR_ANIMATION_FRAMES:
+            # 动画完成，实际消除行
+            for y in sorted(self.clearing_lines_p1, reverse=True):
+                del self.board_p1.grid[y]
+                self.board_p1.grid.insert(0, [None for _ in range(DUAL_GRID_WIDTH)])
+
+            lines = len(self.clearing_lines_p1)
+            self.lines_cleared_p1 += lines
+            self.combo_p1 += 1
+
+            # 计分
+            line_scores = {1: 100, 2: 300, 3: 500, 4: 800}
+            base_score = line_scores.get(lines, 0)
+            combo_bonus = self.combo_p1 * 50
+            self.score_p1 += base_score + combo_bonus
+
+            # 处理垃圾行
+            if self.pending_garbage_p1 > 0:
+                self.add_garbage_lines('p1', self.pending_garbage_p1)
+                self.pending_garbage_p1 = 0
+
+            self.sound_manager.play_clear(lines)
+            self.clearing_lines_p1 = []
+            self.clear_animation_frame_p1 = 0
+            self.spawn_block_p1()
+        else:
+            self.clear_animation_frame_p1 += 1
+
+    def _clear_lines_with_animation_p2(self):
+        """执行玩家 2 消行动画并消除行"""
+        if self.clear_animation_frame_p2 >= CLEAR_ANIMATION_FRAMES:
+            for y in sorted(self.clearing_lines_p2, reverse=True):
+                del self.board_p2.grid[y]
+                self.board_p2.grid.insert(0, [None for _ in range(DUAL_GRID_WIDTH)])
+
+            lines = len(self.clearing_lines_p2)
+            self.lines_cleared_p2 += lines
+            self.combo_p2 += 1
+
+            line_scores = {1: 100, 2: 300, 3: 500, 4: 800}
+            base_score = line_scores.get(lines, 0)
+            combo_bonus = self.combo_p2 * 50
+            self.score_p2 += base_score + combo_bonus
+
+            if self.pending_garbage_p2 > 0:
+                self.add_garbage_lines('p2', self.pending_garbage_p2)
+                self.pending_garbage_p2 = 0
+
+            self.sound_manager.play_clear(lines)
+            self.clearing_lines_p2 = []
+            self.clear_animation_frame_p2 = 0
+            self.spawn_block_p2()
+        else:
+            self.clear_animation_frame_p2 += 1
+
+    def _draw_block_cell(self, draw_x, draw_y, color, block_size):
+        """绘制单个方块单元格"""
+        pygame.draw.rect(self.screen, color,
+                        (draw_x + 1, draw_y + 1, block_size - 2, block_size - 2))
+        highlight = tuple(min(255, c + 50) for c in color)
+        pygame.draw.line(self.screen, highlight,
+                        (draw_x + 2, draw_y + 2),
+                        (draw_x + block_size - 3, draw_y + 2), 2)
+        pygame.draw.line(self.screen, highlight,
+                        (draw_x + 2, draw_y + 2),
+                        (draw_x + 2, draw_y + block_size - 3), 2)
+
+    def _draw_grid(self, x_offset, board, current_block, ghost_y=None, clearing_lines=None, clear_frame=0, block_size=DUAL_BLOCK_SIZE):
+        """绘制游戏网格"""
+        grid_width = DUAL_GRID_WIDTH
+        grid_height = DUAL_GRID_HEIGHT
+
+        # 绘制背景
+        pygame.draw.rect(self.screen, (30, 30, 50),
+                        (x_offset, 0, grid_width * block_size, grid_height * block_size))
+
+        # 绘制网格线
+        for x in range(grid_width + 1):
+            pygame.draw.line(self.screen, (50, 50, 70),
+                           (x_offset + x * block_size, 0),
+                           (x_offset + x * block_size, grid_height * block_size))
+        for y in range(grid_height + 1):
+            pygame.draw.line(self.screen, (50, 50, 70),
+                           (x_offset, y * block_size),
+                           (x_offset + grid_width * block_size, y * block_size))
+
+        # 绘制已锁定的方块
+        for y, row in enumerate(board.grid):
+            for x, color in enumerate(row):
+                if color:
+                    draw_x = x_offset + x * block_size
+                    draw_y = y * block_size
+                    self._draw_block_cell(draw_x, draw_y, color, block_size)
+
+        # 绘制消行动画
+        if clearing_lines and clear_frame > 0:
+            progress = clear_frame / CLEAR_ANIMATION_FRAMES
+            flash_color = (255, 255, 255) if int(progress * 10) % 2 == 0 else (255, 200, 100)
+            for y in clearing_lines:
+                for x in range(grid_width):
+                    draw_x = x_offset + x * block_size
+                    draw_y = y * block_size
+                    pygame.draw.rect(self.screen, flash_color,
+                                   (draw_x + 1, draw_y + 1, block_size - 2, block_size - 2))
+
+        # 绘制影子方块
+        if current_block and ghost_y is not None:
+            for y, row in enumerate(current_block.shape):
+                for x, cell in enumerate(row):
+                    if cell:
+                        draw_x = x_offset + (current_block.x + x) * block_size
+                        draw_y = (ghost_y + y) * block_size
+                        pygame.draw.rect(self.screen, current_block.color,
+                                       (draw_x + 1, draw_y + 1, block_size - 2, block_size - 2), 2)
+
+        # 绘制当前方块
+        if current_block:
+            for y, row in enumerate(current_block.shape):
+                for x, cell in enumerate(row):
+                    if cell:
+                        draw_x = x_offset + (current_block.x + x) * block_size
+                        draw_y = (current_block.y + y) * block_size
+                        self._draw_block_cell(draw_x, draw_y, current_block.color, block_size)
+
+    def _draw_player_board(self, player_num, x_offset):
+        """绘制玩家游戏区域"""
+        is_p1 = player_num == 1
+        board = self.board_p1 if is_p1 else self.board_p2
+        current_block = self.current_block_p1 if is_p1 else self.current_block_p2
+        ghost_y = None
+        clearing_lines = self.clearing_lines_p1 if is_p1 else self.clearing_lines_p2
+        clear_frame = self.clear_animation_frame_p1 if is_p1 else self.clearing_lines_p2
+
+        if current_block and not (self.game_over_p1 if is_p1 else self.game_over_p2):
+            # 获取影子位置
+            ghost_y = board.get_ghost_y(current_block)
+
+        self._draw_grid(x_offset, board, current_block, ghost_y, clearing_lines, clear_frame)
+
+    def _draw_mini_board(self, board, x, y, title, block_size=20):
+        """绘制小型预览板（下一个/暂存）"""
+        # 标题
+        text = self.font_small.render(title, True, self.current_theme['text_color'])
+        self.screen.blit(text, (x, y))
+
+        # 棋盘背景
+        pygame.draw.rect(self.screen, (30, 30, 50),
+                        (x, y + 15, GRID_WIDTH * block_size, GRID_HEIGHT * block_size))
+
+        # 绘制方块
+        for board_y, row in enumerate(board.grid):
+            for board_x, color in enumerate(row):
+                if color:
+                    draw_x = x + board_x * block_size
+                    draw_y = y + 15 + board_y * block_size
+                    pygame.draw.rect(self.screen, color,
+                                   (draw_x, draw_y, block_size, block_size))
+
+    def _draw_next_block(self, block, x, y, title, block_size=20):
+        """绘制下一个方块预览"""
+        text = self.font_small.render(title, True, self.current_theme['text_color'])
+        self.screen.blit(text, (x, y))
+
+        for row_idx, row in enumerate(block.shape):
+            for col_idx, cell in enumerate(row):
+                if cell:
+                    draw_x = x + col_idx * block_size
+                    draw_y = y + 15 + row_idx * block_size
+                    pygame.draw.rect(self.screen, block.color,
+                                   (draw_x, draw_y, block_size, block_size))
+
+    def _draw_hold_block(self, block, x, y, title, can_use=True, block_size=20):
+        """绘制暂存方块"""
+        text = self.font_small.render(title, True, self.current_theme['text_color'])
+        self.screen.blit(text, (x, y))
+
+        if block:
+            color = block.color if can_use else tuple(c // 2 for c in block.color)
+            for row_idx, row in enumerate(block.shape):
+                for col_idx, cell in enumerate(row):
+                    if cell:
+                        draw_x = x + col_idx * block_size
+                        draw_y = y + 15 + row_idx * block_size
+                        pygame.draw.rect(self.screen, color,
+                                       (draw_x, draw_y, block_size, block_size))
+
+    def draw_ui(self):
+        """绘制 UI 信息"""
+        bs = DUAL_BLOCK_SIZE
+        gw = DUAL_GRID_WIDTH
+
+        # 玩家 1 信息（左侧）
+        p1_color = self.current_theme['accent_color']
+        p1_name = self.font_medium.render('玩家 1', True, p1_color)
+        self.screen.blit(p1_name, (10, 5))
+
+        p1_score = self.font_small.render(f'分数：{self.score_p1}', True, WHITE)
+        self.screen.blit(p1_score, (10, 25))
+
+        p1_lines = self.font_small.render(f'消行：{self.lines_cleared_p1}', True, WHITE)
+        self.screen.blit(p1_lines, (10, 45))
+
+        p1_combo = self.font_small.render(f'连击：{self.combo_p1}', True, (255, 215, 0) if self.combo_p1 > 0 else GRAY)
+        self.screen.blit(p1_combo, (10, 65))
+
+        # 垃圾行指示
+        if self.pending_garbage_p1 > 0:
+            garbage_text = self.font_small.render(f'垃圾行：{self.pending_garbage_p1}', True, (255, 100, 100))
+            self.screen.blit(garbage_text, (10, 85))
+
+        # 玩家 1 暂存和下一个
+        self._draw_hold_block(self.hold_block_p1, 10, 110, '暂存 (Q)', self.can_hold_p1)
+        self._draw_next_block(self.next_block_p1, 10, 180, '下一个', bs)
+
+        # 玩家 2 信息（右侧）
+        p2_color = (100, 255, 100)
+        p2_name = self.font_medium.render('玩家 2', True, p2_color)
+        p2_name_rect = p2_name.get_rect(topright=(DUAL_SCREEN_WIDTH - 10, 5))
+        self.screen.blit(p2_name, p2_name_rect)
+
+        p2_score = self.font_small.render(f'分数：{self.score_p2}', True, WHITE)
+        p2_score_rect = p2_score.get_rect(topright=(DUAL_SCREEN_WIDTH - 10, 25))
+        self.screen.blit(p2_score, p2_score_rect)
+
+        p2_lines = self.font_small.render(f'消行：{self.lines_cleared_p2}', True, WHITE)
+        p2_lines_rect = p2_lines.get_rect(topright=(DUAL_SCREEN_WIDTH - 10, 45))
+        self.screen.blit(p2_lines, p2_lines_rect)
+
+        p2_combo = self.font_small.render(f'连击：{self.combo_p2}', True, (255, 215, 0) if self.combo_p2 > 0 else GRAY)
+        p2_combo_rect = p2_combo.get_rect(topright=(DUAL_SCREEN_WIDTH - 10, 65))
+        self.screen.blit(p2_combo, p2_combo_rect)
+
+        if self.pending_garbage_p2 > 0:
+            garbage_text = self.font_small.render(f'垃圾行：{self.pending_garbage_p2}', True, (255, 100, 100))
+            garbage_rect = garbage_text.get_rect(topright=(DUAL_SCREEN_WIDTH - 10, 85))
+            self.screen.blit(garbage_text, garbage_rect)
+
+        # 玩家 2 暂存和下一个
+        self._draw_hold_block(self.hold_block_p2, DUAL_SCREEN_WIDTH - 110, 110, '暂存 (M)', self.can_hold_p2, bs)
+        self._draw_next_block(self.next_block_p2, DUAL_SCREEN_WIDTH - 110, 180, '下一个', bs)
+
+        # 中央标题
+        title = self.font_large.render('双人对战', True, self.current_theme['accent_color'])
+        title_rect = title.get_rect(centerx=DUAL_SCREEN_WIDTH // 2, top=10)
+        self.screen.blit(title, title_rect)
+
+        # 操作说明
+        controls_p1 = [
+            '玩家 1 操作:',
+            'WASD - 移动',
+            'E - 旋转',
+            'F - 硬降',
+            'Q - 暂存',
+        ]
+        for i, text in enumerate(controls_p1):
+            rendered = self.font_small.render(text, True, WHITE)
+            self.screen.blit(rendered, (10, 280 + i * 20))
+
+        controls_p2 = [
+            '玩家 2 操作:',
+            '箭头键 - 移动',
+            '0 - 旋转',
+            'Enter- 硬降',
+            'M - 暂存',
+        ]
+        for i, text in enumerate(controls_p2):
+            rendered = self.font_small.render(text, True, WHITE)
+            self.screen.blit(rendered, (DUAL_SCREEN_WIDTH - 100, 280 + i * 20))
+
+    def draw_game_over(self):
+        """绘制游戏结束画面"""
+        overlay = pygame.Surface((DUAL_SCREEN_WIDTH, DUAL_SCREEN_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(200)
+        self.screen.blit(overlay, (0, 0))
+
+        if self.winner == 'p1':
+            result_text = self.font_large.render('玩家 1 获胜!', True, (100, 150, 255))
+        elif self.winner == 'p2':
+            result_text = self.font_large.render('玩家 2 获胜!', True, (100, 255, 150))
+        else:
+            result_text = self.font_large.render('游戏结束', True, WHITE)
+
+        score_text = self.font_medium.render(f'P1: {self.score_p1}  |  P2: {self.score_p2}', True, WHITE)
+        restart_text = self.font_medium.render('按 R 重新开始', True, WHITE)
+
+        result_rect = result_text.get_rect(center=(DUAL_SCREEN_WIDTH // 2, DUAL_SCREEN_HEIGHT // 2 - 50))
+        score_rect = score_text.get_rect(center=(DUAL_SCREEN_WIDTH // 2, DUAL_SCREEN_HEIGHT // 2))
+        restart_rect = restart_text.get_rect(center=(DUAL_SCREEN_WIDTH // 2, DUAL_SCREEN_HEIGHT // 2 + 50))
+
+        self.screen.blit(result_text, result_rect)
+        self.screen.blit(score_text, score_rect)
+        self.screen.blit(restart_text, restart_rect)
+
+    def draw_pause(self):
+        """绘制暂停画面"""
+        overlay = pygame.Surface((DUAL_SCREEN_WIDTH, DUAL_SCREEN_HEIGHT))
+        overlay.fill((0, 0, 0))
+        overlay.set_alpha(150)
+        self.screen.blit(overlay, (0, 0))
+
+        pause_text = self.font_large.render('游戏暂停', True, WHITE)
+        pause_rect = pause_text.get_rect(center=(DUAL_SCREEN_WIDTH // 2, DUAL_SCREEN_HEIGHT // 2))
+        self.screen.blit(pause_text, pause_rect)
+
+    def draw(self):
+        """绘制游戏画面"""
+        self.screen.fill(self.current_theme['bg_color'])
+
+        # 绘制玩家 1 区域（左侧）
+        p1_x = 80
+        self._draw_player_board(1, p1_x)
+
+        # 绘制玩家 2 区域（右侧）
+        p2_x = DUAL_SCREEN_WIDTH - 80 - DUAL_GRID_WIDTH * DUAL_BLOCK_SIZE
+        self._draw_player_board(2, p2_x)
+
+        # 绘制 UI
+        self.draw_ui()
+
+        # 绘制游戏结束或暂停画面
+        if self.game_over_p1 or self.game_over_p2:
+            self.draw_game_over()
+        elif self.paused:
+            self.draw_pause()
+
+        pygame.display.flip()
+
+    def handle_events(self):
+        """处理事件"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+                return
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    self.reset_game()
+                    return
+
+                if self.game_over_p1 or self.game_over_p2 or self.paused:
+                    continue
+
+                # 玩家 1 控制 (WASD + QEF)
+                if event.key == pygame.K_a:
+                    self.move_block_p1(-1, 0)
+                elif event.key == pygame.K_d:
+                    self.move_block_p1(1, 0)
+                elif event.key == pygame.K_s:
+                    if self.move_block_p1(0, 1):
+                        self.score_p1 += 1
+                elif event.key == pygame.K_w:
+                    self.rotate_block_p1()
+                elif event.key == pygame.K_f:
+                    self.hard_drop_p1()
+                elif event.key == pygame.K_q:
+                    self.hold_block_p1()
+
+                # 玩家 2 控制 (箭头键 + M/0/Enter)
+                if event.key == pygame.K_LEFT:
+                    self.move_block_p2(-1, 0)
+                elif event.key == pygame.K_RIGHT:
+                    self.move_block_p2(1, 0)
+                elif event.key == pygame.K_DOWN:
+                    if self.move_block_p2(0, 1):
+                        self.score_p2 += 1
+                elif event.key == pygame.K_UP:
+                    self.rotate_block_p2()
+                elif event.key == pygame.K_RETURN:
+                    self.hard_drop_p2()
+                elif event.key == pygame.K_m:
+                    self.hold_block_p2()
+                elif event.key == pygame.K_0:
+                    self.hard_drop_p2()
+
+                # 公共控制
+                if event.key == pygame.K_p:
+                    self.paused = True
+
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_p and not self.game_over_p1 and not self.game_over_p2:
+                    self.paused = False
+
+    def update(self):
+        """更新游戏状态"""
+        if self.paused or self.game_over_p1 or self.game_over_p2:
+            return
+
+        # 更新玩家 1
+        if not self.clearing_lines_p1:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.last_fall_time_p1 > self.speed_p1:
+                self.last_fall_time_p1 = current_time
+                if not self.move_block_p1(0, 1):
+                    self.lock_current_block_p1()
+        else:
+            self._clear_lines_with_animation_p1()
+
+        # 更新玩家 2
+        if not self.clearing_lines_p2:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.last_fall_time_p2 > self.speed_p2:
+                self.last_fall_time_p2 = current_time
+                if not self.move_block_p2(0, 1):
+                    self.lock_current_block_p2()
+        else:
+            self._clear_lines_with_animation_p2()
+
+    def run(self):
+        """双人对战主循环"""
+        while self.running:
+            self.handle_events()
+            self.update()
+            self.draw()
+            self.clock.tick(60)
+
+        pygame.quit()
+        sys.exit()
 
 
 if __name__ == '__main__':
