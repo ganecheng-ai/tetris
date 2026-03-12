@@ -74,9 +74,6 @@ MUSIC_VOLUME = 0.5
 # 音量设置文件
 VOLUME_SETTINGS_FILE = 'volume_settings.json'
 
-# 支持的皮肤列表
-SUPPORTED_SKINS = list(BLOCK_SKINS.keys())
-
 # 最高分记录文件
 HIGH_SCORE_FILE = 'highscore.json'
 
@@ -279,6 +276,9 @@ BLOCK_SKINS = {
         'unlock_condition': {'type': 'tetris', 'value': 10},
     },
 }
+
+# 支持的皮肤列表
+SUPPORTED_SKINS = list(BLOCK_SKINS.keys())
 
 # 游戏主题配置
 THEMES = {
