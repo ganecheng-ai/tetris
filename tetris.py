@@ -654,6 +654,295 @@ class DailyChallengeManager:
         return f"{self.current_challenge['name']}: {self.current_challenge['desc']}"
 
 
+# 快捷键自定义配置文件
+KEYBINDINGS_FILE = 'keybindings.json'
+
+# 默认快捷键配置
+DEFAULT_KEYBINDINGS = {
+    'move_left': pygame.K_LEFT,
+    'move_right': pygame.K_RIGHT,
+    'rotate': pygame.K_UP,
+    'soft_drop': pygame.K_DOWN,
+    'hard_drop': pygame.K_SPACE,
+    'hold': pygame.K_c,
+    'pause': pygame.K_p,
+    'restart': pygame.K_r,
+    'change_theme': pygame.K_t,
+    'sound_volume_down': pygame.K_1,
+    'sound_volume_up': pygame.K_2,
+    'music_volume_down': pygame.K_3,
+    'music_volume_up': pygame.K_4,
+    'toggle_music': pygame.K_m,
+    'refresh_online': pygame.K_F5,
+    'save_game': pygame.K_s,
+    'load_game': pygame.K_l,
+    'delete_save': pygame.K_DELETE,
+    'speed_down': pygame.K_MINUS,      # 游戏速度降低
+    'speed_up': pygame.K_EQUALS,       # 游戏速度提升
+}
+
+# 双人模式快捷键
+DUAL_KEYBINDINGS = {
+    'player1': {
+        'move_left': pygame.K_a,
+        'move_right': pygame.K_d,
+        'rotate': pygame.K_w,
+        'soft_drop': pygame.K_s,
+        'hard_drop': pygame.K_f,
+        'hold': pygame.K_q,
+    },
+    'player2': {
+        'move_left': pygame.K_LEFT,
+        'move_right': pygame.K_RIGHT,
+        'rotate': pygame.K_UP,
+        'soft_drop': pygame.K_DOWN,
+        'hard_drop': pygame.K_RETURN,
+        'hold': pygame.K_m,
+    }
+}
+
+
+class KeyBindingsManager:
+    """快捷键自定义管理器 - v2.7.0 新增"""
+
+    def __init__(self):
+        self.keybindings = DEFAULT_KEYBINDINGS.copy()
+        self._load_keybindings()
+
+    def _get_file_path(self):
+        """获取快捷键配置文件路径"""
+        if getattr(sys, 'frozen', False):
+            return os.path.join(os.path.dirname(sys.executable), KEYBINDINGS_FILE)
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), KEYBINDINGS_FILE)
+
+    def _load_keybindings(self):
+        """加载快捷键配置"""
+        try:
+            file_path = self._get_file_path()
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    saved_bindings = json.load(f)
+                    # 只加载有效的快捷键
+                    for key, value in saved_bindings.items():
+                        if key in DEFAULT_KEYBINDINGS:
+                            self.keybindings[key] = value
+        except Exception as e:
+            print(f"加载快捷键配置失败：{e}")
+
+    def _save_keybindings(self):
+        """保存快捷键配置"""
+        try:
+            file_path = self._get_file_path()
+            # 将 pygame 键码转换为整数保存
+            save_data = {k: int(v) for k, v in self.keybindings.items()}
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存快捷键配置失败：{e}")
+
+    def get_binding(self, action):
+        """获取快捷键"""
+        return self.keybindings.get(action, DEFAULT_KEYBINDINGS.get(action))
+
+    def set_binding(self, action, key):
+        """设置快捷键"""
+        if action in self.keybindings:
+            self.keybindings[action] = key
+            self._save_keybindings()
+            return True
+        return False
+
+    def reset_to_default(self):
+        """重置为默认快捷键"""
+        self.keybindings = DEFAULT_KEYBINDINGS.copy()
+        self._save_keybindings()
+
+    def get_all_bindings(self):
+        """获取所有快捷键"""
+        return self.keybindings.copy()
+
+    def get_action_name(self, key):
+        """根据键码获取动作名称"""
+        for action, binding in self.keybindings.items():
+            if binding == key:
+                return action
+        return None
+
+
+# 回放系统配置文件
+REPLAY_FILE = 'replays.json'
+
+# 回放数据结构
+REPLAY_MAGIC_NUMBER = b'TETRIS_REPLAY_V1'
+
+
+class ReplayManager:
+    """回放系统管理器 - v2.7.0 新增"""
+
+    def __init__(self):
+        self.current_replay = None
+        self.is_recording = False
+        self.is_playing = False
+        self.replay_data = None
+        self.recorded_actions = []
+        self.playback_index = 0
+        self.start_ticks = 0
+
+    def start_recording(self, game_mode, seed=None):
+        """开始录制回放"""
+        self.is_recording = True
+        self.recorded_actions = []
+        self.start_ticks = pygame.time.get_ticks()
+        self.replay_data = {
+            'game_mode': game_mode,
+            'seed': seed,
+            'start_time': pygame.time.get_ticks(),
+            'actions': [],
+            'final_score': 0,
+            'final_lines': 0,
+            'final_level': 1,
+        }
+
+    def stop_recording(self, score=0, lines=0, level=1):
+        """停止录制回放"""
+        self.is_recording = False
+        if self.replay_data:
+            self.replay_data['final_score'] = score
+            self.replay_data['final_lines'] = lines
+            self.replay_data['final_level'] = level
+            self.replay_data['duration'] = pygame.time.get_ticks() - self.start_ticks
+
+    def record_action(self, action_type, tick, x=None, y=None, rotation=None):
+        """记录玩家操作"""
+        if self.is_recording:
+            self.recorded_actions.append({
+                'type': action_type,
+                'tick': tick - self.start_ticks,
+                'x': x,
+                'y': y,
+                'rotation': rotation,
+            })
+            self.replay_data['actions'] = self.recorded_actions
+
+    def save_replay(self, filename=None):
+        """保存回放"""
+        if not self.replay_data:
+            return False
+
+        try:
+            if filename is None:
+                timestamp = pygame.time.get_ticks()
+                filename = f"replay_{timestamp}.json"
+
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(self.replay_data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"保存回放失败：{e}")
+            return False
+
+    def load_replay(self, filename):
+        """加载回放"""
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                self.replay_data = json.load(f)
+            return True
+        except Exception as e:
+            print(f"加载回放失败：{e}")
+            return False
+
+    def start_playback(self, replay_data):
+        """开始回放"""
+        self.replay_data = replay_data
+        self.is_playing = True
+        self.playback_index = 0
+        self.start_ticks = pygame.time.get_ticks()
+
+    def stop_playback(self):
+        """停止回放"""
+        self.is_playing = False
+        self.playback_index = 0
+
+    def update_playback(self, current_tick):
+        """更新回放状态，返回当前帧需要执行的操作"""
+        if not self.is_playing or not self.replay_data:
+            return None
+
+        actions_to_play = []
+        replay_tick = current_tick - self.start_ticks
+
+        # 播放到当前时间点的所有操作
+        while self.playback_index < len(self.replay_data['actions']):
+            action = self.replay_data['actions'][self.playback_index]
+            if action['tick'] <= replay_tick:
+                actions_to_play.append(action)
+                self.playback_index += 1
+            else:
+                break
+
+        return actions_to_play if actions_to_play else None
+
+    def is_playback_finished(self, current_tick):
+        """检查回放是否结束"""
+        if not self.is_playing or not self.replay_data:
+            return True
+        return current_tick - self.start_ticks >= self.replay_data.get('duration', 0)
+
+    def get_replay_info(self):
+        """获取回放信息"""
+        if not self.replay_data:
+            return None
+        return {
+            'game_mode': self.replay_data.get('game_mode', 'unknown'),
+            'duration': self.replay_data.get('duration', 0) / 1000,
+            'score': self.replay_data.get('final_score', 0),
+            'lines': self.replay_data.get('final_lines', 0),
+            'level': self.replay_data.get('final_level', 1),
+            'actions_count': len(self.replay_data.get('actions', [])),
+        }
+
+
+# 游戏速度调节常量
+MIN_SPEED_MULTIPLIER = 0.5
+MAX_SPEED_MULTIPLIER = 2.0
+SPEED_STEP = 0.1
+
+
+class GameSpeedManager:
+    """游戏速度调节管理器 - v2.7.0 新增"""
+
+    def __init__(self):
+        self.speed_multiplier = 1.0
+        self.base_speed = 1000
+
+    def set_speed_multiplier(self, multiplier):
+        """设置速度倍数"""
+        self.speed_multiplier = max(MIN_SPEED_MULTIPLIER, min(MAX_SPEED_MULTIPLIER, multiplier))
+
+    def increase_speed(self):
+        """提高游戏速度"""
+        self.speed_multiplier = min(MAX_SPEED_MULTIPLIER, self.speed_multiplier + SPEED_STEP)
+        return self.speed_multiplier
+
+    def decrease_speed(self):
+        """降低游戏速度"""
+        self.speed_multiplier = max(MIN_SPEED_MULTIPLIER, self.speed_multiplier - SPEED_STEP)
+        return self.speed_multiplier
+
+    def reset_speed(self):
+        """重置游戏速度"""
+        self.speed_multiplier = 1.0
+
+    def get_adjusted_speed(self, base_speed):
+        """根据倍数计算实际速度"""
+        # 速度倍数越大，下落间隔越短
+        return int(base_speed / self.speed_multiplier)
+
+    def get_speed_display(self):
+        """获取速度显示文本"""
+        return f"{self.speed_multiplier:.1f}x"
+
+
 class SoundManager:
     """音效管理器 - 支持音效和背景音乐独立控制"""
 
@@ -721,38 +1010,95 @@ class SoundManager:
             self.play_music()
 
     def _generate_music_track(self, track_id, duration=60):
-        """生成背景音乐曲目（程序生成的电子音乐）"""
+        """生成背景音乐曲目（程序生成的电子音乐）- v2.7.0 增强版"""
         try:
             sample_rate = 22050
             n_samples = int(sample_rate * duration)
             buf = bytes()
 
-            # 不同曲目的音调和节奏
-            track_scales = [
-                [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88],  # C 大调
-                [293.66, 329.63, 369.99, 392.00, 440.00, 493.88, 587.33],  # D 大调
-                [329.63, 369.99, 415.30, 440.00, 493.88, 554.37, 659.25],  # E 大调
-                [277.18, 311.13, 349.23, 369.99, 415.30, 466.16, 554.37],  # 升 C 小调
+            # 不同曲目的音调、节奏和风格（v2.7.0: 从 4 首扩展到 8 首）
+            track_configs = [
+                # 原版 4 首
+                {'scale': [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88], 'tempo': 90, 'style': 'classic'},   # C 大调 - 经典
+                {'scale': [293.66, 329.63, 369.99, 392.00, 440.00, 493.88, 587.33], 'tempo': 100, 'style': 'upbeat'},  # D 大调 - 欢快
+                {'scale': [329.63, 369.99, 415.30, 440.00, 493.88, 554.37, 659.25], 'tempo': 110, 'style': 'energetic'},  # E 大调 - 活力
+                {'scale': [277.18, 311.13, 349.23, 369.99, 415.30, 466.16, 554.37], 'tempo': 85, 'style': 'minor'},    # 升 C 小调 - 忧郁
+                # v2.7.0 新增 4 首
+                {'scale': [349.23, 392.00, 440.00, 466.16, 523.25, 587.33, 698.46], 'tempo': 120, 'style': 'techno'},  # F 大调 - 科技
+                {'scale': [392.00, 440.00, 493.88, 523.25, 587.33, 659.25, 783.99], 'tempo': 95, 'style': 'ambient'},  # G 大调 - 环境
+                {'scale': [196.00, 233.08, 261.63, 293.66, 349.23, 392.00, 466.16], 'tempo': 75, 'style': 'chill'},    # G 小调 - 放松
+                {'scale': [261.63, 311.13, 392.00, 466.16, 523.25, 622.25, 783.99], 'tempo': 130, 'style': 'fast'},    # C 小调 - 快速
             ]
-            scale = track_scales[track_id % len(track_scales)]
-            tempo = 90 + (track_id * 10)  # BPM
+
+            config = track_configs[track_id % len(track_configs)]
+            scale = config['scale']
+            tempo = config['tempo']
+            style = config['style']
 
             for i in range(n_samples):
                 t = i / sample_rate
                 beat = (t * tempo / 60) % 1
 
-                # 低音节奏（每拍）
+                # 根据风格调整音乐特征
                 bass_freq = scale[0] / 2
-                bass = 0.3 * (1 if (int(t * tempo / 60 * 4) % 2) == 0 else -1)
 
-                # 和弦进行中音
-                chord_idx = int(t * tempo / 60 / 4) % len(scale)
-                chord_freq = scale[chord_idx]
-                chord = 0.2 * (0.5 if beat < 0.5 else -0.5)
-
-                # 高音旋律（随机但和谐）
-                melody_freq = scale[(track_id + int(t * 2)) % len(scale)]
-                melody = 0.15 * (0.3 if int(t * 8) % 2 == 0 else -0.3)
+                # 不同风格的节奏处理
+                if style == 'techno':
+                    # 科技风格：强节奏
+                    bass = 0.4 * (1 if (int(t * tempo / 60 * 4) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 * 2) % len(scale)
+                    chord = 0.25 * (0.6 if beat < 0.5 else -0.6)
+                    melody_freq = scale[(track_id + int(t * 4)) % len(scale)]
+                    melody = 0.2 * (0.4 if int(t * 12) % 2 == 0 else -0.4)
+                elif style == 'ambient':
+                    # 环境风格：柔和悠长
+                    bass = 0.2 * (1 if (int(t * tempo / 60 * 2) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 / 8) % len(scale)
+                    chord = 0.15 * (0.4 if beat < 0.5 else -0.4)
+                    melody_freq = scale[(track_id + int(t)) % len(scale)]
+                    melody = 0.1 * (0.2 if int(t * 4) % 2 == 0 else -0.2)
+                elif style == 'chill':
+                    # 放松风格：缓慢舒适
+                    bass = 0.25 * (1 if (int(t * tempo / 60 * 3) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 / 6) % len(scale)
+                    chord = 0.18 * (0.5 if beat < 0.5 else -0.5)
+                    melody_freq = scale[(track_id + int(t * 1.5)) % len(scale)]
+                    melody = 0.12 * (0.3 if int(t * 6) % 2 == 0 else -0.3)
+                elif style == 'fast':
+                    # 快速风格：紧凑激烈
+                    bass = 0.35 * (1 if (int(t * tempo / 60 * 8) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60) % len(scale)
+                    chord = 0.22 * (0.7 if beat < 0.5 else -0.7)
+                    melody_freq = scale[(track_id + int(t * 8)) % len(scale)]
+                    melody = 0.18 * (0.5 if int(t * 16) % 2 == 0 else -0.5)
+                elif style == 'minor':
+                    # 小调风格：忧郁深沉
+                    bass = 0.28 * (1 if (int(t * tempo / 60 * 3) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 / 5) % len(scale)
+                    chord = 0.18 * (0.45 if beat < 0.5 else -0.45)
+                    melody_freq = scale[(track_id + int(t * 1.2)) % len(scale)]
+                    melody = 0.12 * (0.25 if int(t * 5) % 2 == 0 else -0.25)
+                elif style == 'energetic':
+                    # 活力风格：充满能量
+                    bass = 0.38 * (1 if (int(t * tempo / 60 * 6) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 * 1.5) % len(scale)
+                    chord = 0.25 * (0.65 if beat < 0.5 else -0.65)
+                    melody_freq = scale[(track_id + int(t * 5)) % len(scale)]
+                    melody = 0.16 * (0.45 if int(t * 10) % 2 == 0 else -0.45)
+                elif style == 'upbeat':
+                    # 欢快风格：轻松愉快
+                    bass = 0.32 * (1 if (int(t * tempo / 60 * 4) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 * 1.2) % len(scale)
+                    chord = 0.2 * (0.55 if beat < 0.5 else -0.55)
+                    melody_freq = scale[(track_id + int(t * 3)) % len(scale)]
+                    melody = 0.14 * (0.35 if int(t * 8) % 2 == 0 else -0.35)
+                else:  # classic
+                    # 经典风格：平衡传统
+                    bass = 0.3 * (1 if (int(t * tempo / 60 * 4) % 2) == 0 else -1)
+                    chord_idx = int(t * tempo / 60 / 4) % len(scale)
+                    chord = 0.2 * (0.5 if beat < 0.5 else -0.5)
+                    melody_freq = scale[(track_id + int(t * 2)) % len(scale)]
+                    melody = 0.15 * (0.3 if int(t * 8) % 2 == 0 else -0.3)
 
                 # 组合所有音轨
                 value = int(127 + 60 * (bass + chord + melody))
@@ -772,12 +1118,12 @@ class SoundManager:
             return bytes([128] * sample_rate)
 
     def _init_music_playlist(self):
-        """初始化背景音乐播放列表"""
+        """初始化背景音乐播放列表 - v2.7.0 增强版，更多曲目"""
         try:
-            # 生成多首背景音乐
+            # 生成多首背景音乐（v2.7.0: 从 4 首增加到 8 首）
             self.music_playlist = []
-            for i in range(4):
-                track_data = self._generate_music_track(i, duration=30)
+            for i in range(8):  # v2.7.0: 8 首背景音乐
+                track_data = self._generate_music_track(i, duration=45)  # v2.7.0: 每首 45 秒
                 self.music_playlist.append(track_data)
             self.music_loaded = len(self.music_playlist) > 0
         except Exception as e:
@@ -1589,7 +1935,7 @@ class GameBoard:
 
 
 class TetrisGame:
-    """游戏主类"""
+    """游戏主类 - v2.7.0 增强版"""
 
     def __init__(self, mode='classic', custom_rules=None):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -1607,6 +1953,12 @@ class TetrisGame:
         self.online_manager = OnlineLeaderboardManager()
         self.cloud_save_manager = CloudSaveManager(self.online_manager)
         self.custom_rules_manager = CustomRulesManager()
+        self.daily_challenge_manager = DailyChallengeManager()  # v2.7.0: 每日挑战管理器
+
+        # v2.7.0: 新增管理器
+        self.keybindings_manager = KeyBindingsManager()  # 快捷键自定义
+        self.replay_manager = ReplayManager()  # 回放系统
+        self.game_speed_manager = GameSpeedManager()  # 游戏速度调节
 
         # 游戏模式
         self.game_mode = mode
@@ -1636,6 +1988,29 @@ class TetrisGame:
 
         # 成就解锁状态
         self.new_achievements = []
+
+        # v2.7.0: 游戏内提示系统
+        self.tips_enabled = True
+        self.current_tip = ''
+        self.tip_display_time = 0
+        self.tips_list = [
+            '提示：使用空格键可以硬降，直接落到底部。',
+            '提示：按 C 键可以暂存方块，留到以后使用。',
+            '提示：一次性消除 4 行可以获得更多分数！',
+            '提示：连续消除可以触发连击，获得额外分数。',
+            '提示：影子方块显示方块的落地位置。',
+            '提示：按 P 键可以暂停游戏。',
+            '提示：按 T 键可以切换游戏主题。',
+            '提示：每日挑战每天都有不同的任务！',
+            '提示：解锁新皮肤可以让游戏更有趣。',
+            '提示：使用数字键 1/2 调节音效音量，3/4 调节音乐音量。',
+            '提示：按 +/- 键可以调节游戏速度。',
+            '提示：硬降可以获得额外分数。',
+            '提示：在双人对战中，消除行数可以向对手发送垃圾行。',
+            '提示：连击越高，发送的垃圾行越多！',
+            '提示：大师模式有 20 层关卡，挑战你的极限！',
+        ]
+        self._show_random_tip()
 
         self.clock = pygame.time.Clock()
         self.reset_game()
@@ -1772,9 +2147,31 @@ class TetrisGame:
             # 使用自定义规则
             self.custom_rules = self.custom_rules_manager.get_all_rules()
             self.level_index = self.custom_rules.get('initial_level', 1) - 1
+        elif self.game_mode == 'daily':
+            # 每日挑战模式
+            challenge = self.daily_challenge_manager.get_current_challenge()
+            if challenge:
+                rules = challenge.get('rules', {})
+                self.daily_target = rules.get('target_lines', 50)
+                self.daily_challenge_type = challenge.get('type', 'lines')
+            self._show_challenge_tip()
 
         # 更新标题
         pygame.display.set_caption(f'俄罗斯方块 - Tetris - {self.mode_config["name"]}')
+
+    def _show_random_tip(self):
+        """显示随机提示 - v2.7.0 新增"""
+        self.current_tip = random.choice(self.tips_list)
+        self.tip_display_time = pygame.time.get_ticks()
+
+    def _show_challenge_tip(self):
+        """显示每日挑战提示 - v2.7.0 新增"""
+        challenge = self.daily_challenge_manager.get_current_challenge()
+        if challenge:
+            self.current_tip = f"今日挑战：{challenge.get('name', '')} - {challenge.get('desc', '')}"
+        else:
+            self.current_tip = "今日挑战：无挑战"
+        self.tip_display_time = pygame.time.get_ticks()
 
     def spawn_block(self):
         """生成新方块"""
@@ -2117,6 +2514,61 @@ class TetrisGame:
             # 经典模式
             return LEVELS[self.level_index]['speed']
 
+    def get_current_speed(self):
+        """获取当前下落速度 - v2.7.0: 支持速度调节"""
+        base_speed = 1000  # 默认基础速度
+
+        if self.game_mode == 'endless':
+            # 无尽模式：速度越来越快
+            level = min(self.endless_level, len(ENDLESS_SPEEDS) - 1)
+            base_speed = ENDLESS_SPEEDS[level]
+        elif self.game_mode == 'sprint':
+            # 竞速模式：固定速度，随消除行数加速
+            base_speed = 500
+            speed_decrease = self.lines_cleared * 10
+            base_speed = max(50, base_speed - speed_decrease)
+        elif self.game_mode == 'ultra':
+            # 限时模式：根据关卡
+            level = min(self.level_index, len(LEVELS) - 1)
+            base_speed = LEVELS[level]['speed']
+        elif self.game_mode == 'master':
+            # 大师模式：使用大师关卡配置
+            level = min(self.level_index, len(MASTER_LEVELS) - 1)
+            base_speed = MASTER_LEVELS[level]['speed']
+        elif self.game_mode == 'zen':
+            # 禅模式：固定慢速，无压力
+            base_speed = self.zen_speed
+        elif self.game_mode == 'challenge':
+            # 挑战模式：根据挑战类型调整速度
+            level = min(self.level_index, len(LEVELS) - 1)
+            base_speed = LEVELS[level]['speed']
+            if self.challenge_config.get('fast_drop'):
+                base_speed = max(50, base_speed // 2)
+        elif self.game_mode == 'custom':
+            # 自定义模式：根据自定义规则
+            gravity = self.custom_rules.get('gravity_type', 'normal')
+            if gravity == 'fast':
+                base_speed = 100
+            elif gravity == 'random':
+                return random.randint(100, 500)
+            # normal - 使用经典速度
+            level = min(self.level_index, len(LEVELS) - 1)
+            base_speed = LEVELS[level]['speed']
+        elif self.game_mode == 'daily':
+            # 每日挑战模式：根据挑战规则调整速度
+            level = min(self.level_index, len(LEVELS) - 1)
+            base_speed = LEVELS[level]['speed']
+            challenge = self.daily_challenge_manager.get_current_challenge()
+            if challenge and challenge.get('type') == 'speed':
+                # 速度挑战：速度提升 50%
+                base_speed = int(base_speed / 1.5)
+        else:
+            # 经典模式
+            base_speed = LEVELS[self.level_index]['speed']
+
+        # v2.7.0: 应用游戏速度调节倍数
+        return self.game_speed_manager.get_adjusted_speed(base_speed)
+
     def _draw_block_cell(self, draw_x, draw_y, color):
         """绘制单个方块单元格，根据主题使用不同风格"""
         theme = self.current_theme
@@ -2374,6 +2826,7 @@ class TetrisGame:
             'P 暂停',
             'R 重新开始',
             'T 切换主题',
+            '+/- 速度调节',
             '1/2 音效音量',
             '3/4 音乐音量',
             'M 切换音乐',
@@ -2418,6 +2871,26 @@ class TetrisGame:
             save_text = self.font_small.render('存档：无', True, theme['text_color'])
         self.screen.blit(save_text, (ui_x, online_status_y + 40))
 
+        # v2.7.0: 游戏速度显示
+        speed_text = self.font_small.render(f'游戏速度：{self.game_speed_manager.get_speed_display()}', True, theme['accent_color'])
+        self.screen.blit(speed_text, (ui_x, online_status_y + 60))
+
+        # v2.7.0: 每日挑战进度
+        if self.game_mode == 'daily':
+            challenge = self.daily_challenge_manager.get_current_challenge()
+            if challenge:
+                challenge_type = challenge.get('type', 'lines')
+                target = challenge.get('target', 50)
+                if challenge_type == 'lines':
+                    progress_text = self.font_small.render(f'挑战：{self.lines_cleared}/{target}行', True, theme['accent_color'])
+                elif challenge_type == 'score':
+                    progress_text = self.font_small.render(f'挑战：{self.score}/{target * 100}分', True, theme['accent_color'])
+                elif challenge_type == 'combo':
+                    progress_text = self.font_small.render(f'挑战：{self.combo}/{target // 20}连击', True, theme['accent_color'])
+                else:
+                    progress_text = self.font_small.render(f'挑战：{challenge.get("name", "")}', True, theme['accent_color'])
+                self.screen.blit(progress_text, (ui_x, online_status_y + 80))
+
     def _draw_volume_bar(self, x, y, label, volume, theme):
         """绘制音量条"""
         # 标签
@@ -2446,12 +2919,19 @@ class TetrisGame:
         return (bar_x, y + 2, bar_width, bar_height)
 
     def draw_game_over(self):
-        """绘制游戏结束画面"""
+        """绘制游戏结束画面 - v2.7.0 增强版"""
         theme = self.current_theme
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.fill(theme['bg_color'])
         overlay.set_alpha(180)
         self.screen.blit(overlay, (0, 0))
+
+        # v2.7.0: 绘制粒子效果
+        for _ in range(20):
+            px = random.randint(0, SCREEN_WIDTH)
+            py = random.randint(0, SCREEN_HEIGHT)
+            color = random.choice([(255, 215, 0), (255, 100, 100), (100, 255, 100), (255, 255, 255)])
+            pygame.draw.circle(self.screen, color, (px, py), random.randint(2, 5))
 
         # 根据模式显示不同文字
         if self.game_mode == 'sprint':
@@ -2470,34 +2950,65 @@ class TetrisGame:
 
         self.screen.blit(game_over_text,
                         (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 - 80))
+                         SCREEN_HEIGHT // 2 - 120))
         self.screen.blit(score_text,
                         (SCREEN_WIDTH // 2 - score_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 - 30))
+                         SCREEN_HEIGHT // 2 - 60))
 
         if time_text:
             self.screen.blit(time_text,
                             (SCREEN_WIDTH // 2 - time_text.get_width() // 2,
-                             SCREEN_HEIGHT // 2 + 10))
+                             SCREEN_HEIGHT // 2 - 20))
+
+        # v2.7.0: 显示更多统计信息
+        stats = self.statistics_manager.get_all_stats()
+        lines_text = self.font_small.render(f'消除行数：{stats.get("lines_cleared", self.lines_cleared)}', True, theme['text_color'])
+        level_text = self.font_small.render(f'当前关卡：{stats.get("level", self.level_index + 1)}', True, theme['text_color'])
+        combo_text = self.font_small.render(f'最大连击：{stats.get("max_combo", 0)}', True, theme['text_color'])
+
+        self.screen.blit(lines_text,
+                        (SCREEN_WIDTH // 2 - lines_text.get_width() // 2,
+                         SCREEN_HEIGHT // 2 + 20))
+        self.screen.blit(level_text,
+                        (SCREEN_WIDTH // 2 - level_text.get_width() // 2,
+                         SCREEN_HEIGHT // 2 + 45))
+        self.screen.blit(combo_text,
+                        (SCREEN_WIDTH // 2 - combo_text.get_width() // 2,
+                         SCREEN_HEIGHT // 2 + 70))
 
         # 显示最高分
         high_score = self.high_score_manager.get_high_score(mode=self.game_mode)
         high_score_text = self.font_small.render(f'最高分：{high_score}', True, theme['text_color'])
         self.screen.blit(high_score_text,
                         (SCREEN_WIDTH // 2 - high_score_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 + 40))
+                         SCREEN_HEIGHT // 2 + 100))
 
         # 新高分提示
         if self.new_high_score:
             new_record_text = self.font_medium.render('新纪录!', True, (255, 215, 0))
             self.screen.blit(new_record_text,
                             (SCREEN_WIDTH // 2 - new_record_text.get_width() // 2,
-                             SCREEN_HEIGHT // 2 + 70))
+                             SCREEN_HEIGHT // 2 + 130))
 
         restart_text = self.font_medium.render('按 R 重新开始', True, theme['text_color'])
         self.screen.blit(restart_text,
                         (SCREEN_WIDTH // 2 - restart_text.get_width() // 2,
-                         SCREEN_HEIGHT // 2 + 110))
+                         SCREEN_HEIGHT // 2 + 170))
+
+        # v2.7.0: 检查每日挑战完成
+        if self.game_mode == 'daily':
+            game_stats = {
+                'lines_cleared': self.lines_cleared,
+                'score': self.score,
+                'level': self.level_index + 1,
+                'max_combo': stats.get('max_combo', 0),
+            }
+            if self.daily_challenge_manager.check_completion(game_stats):
+                self.daily_challenge_manager.mark_completed()
+                challenge_complete_text = self.font_medium.render('每日挑战完成!', True, (255, 215, 0))
+                self.screen.blit(challenge_complete_text,
+                                (SCREEN_WIDTH // 2 - challenge_complete_text.get_width() // 2,
+                                 SCREEN_HEIGHT // 2 + 210))
 
     def draw_pause(self):
         """绘制暂停画面"""
@@ -2654,6 +3165,16 @@ class TetrisGame:
                     self.cloud_save_manager.delete_save()
                     continue
 
+                # v2.7.0: 游戏速度调节
+                if event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
+                    # 提高游戏速度
+                    self.game_speed_manager.increase_speed()
+                    continue
+                if event.key == pygame.K_MINUS:
+                    # 降低游戏速度
+                    self.game_speed_manager.decrease_speed()
+                    continue
+
                 if self.game_over or self.paused:
                     continue
 
@@ -2745,7 +3266,7 @@ class TetrisGame:
 
 
 class GameMenu:
-    """游戏主菜单"""
+    """游戏主菜单 - v2.7.0 增强动画效果"""
 
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -2760,6 +3281,27 @@ class GameMenu:
         self.menu_state = 'main'  # main, single, dual
         self.selected_mode = 0
         self.clock = pygame.time.Clock()
+
+        # v2.7.0: 菜单动画状态
+        self.menu_ticks = 0
+        self.bg_particles = []  # 背景粒子
+        self.title_y_offset = 0  # 标题浮动效果
+        self.title_float_speed = 0.5
+        self.menu_items_scale = [1.0] * 10  # 菜单项缩放效果
+        self.target_scales = [1.0] * 10  # 目标缩放值
+        self._init_bg_particles()
+
+    def _init_bg_particles(self):
+        """初始化背景粒子"""
+        for _ in range(30):
+            self.bg_particles.append({
+                'x': random.randint(0, SCREEN_WIDTH),
+                'y': random.randint(0, SCREEN_HEIGHT),
+                'vx': random.uniform(-0.5, 0.5),
+                'vy': random.uniform(-0.5, 0.5),
+                'size': random.randint(2, 5),
+                'alpha': random.randint(50, 150),
+            })
 
     def _load_font(self, size):
         """加载字体"""
@@ -2777,17 +3319,30 @@ class GameMenu:
         return pygame.font.SysFont('arial', size)
 
     def draw_main_menu(self):
-        """绘制主菜单"""
+        """绘制主菜单 - v2.7.0 增强动画效果"""
         self.screen.fill(self.current_theme['bg_color'])
 
-        # 标题
+        # v2.7.0: 绘制背景粒子
+        self._draw_bg_particles()
+
+        # v2.7.0: 标题浮动效果
+        self.title_y_offset = math.sin(self.menu_ticks * self.title_float_speed * 0.05) * 5
+        title_y = 80 + int(self.title_y_offset)
+
+        # 标题 (带阴影效果)
+        title_shadow = self.font_large.render('俄罗斯方块', True, (self.current_theme['accent_color'][0] // 2,
+                                                           self.current_theme['accent_color'][1] // 2,
+                                                           self.current_theme['accent_color'][2] // 2))
+        title_shadow_rect = title_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 2, title_y + 2))
+        self.screen.blit(title_shadow, title_shadow_rect)
+
         title = self.font_large.render('俄罗斯方块', True, self.current_theme['accent_color'])
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 80))
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, title_y))
         self.screen.blit(title, title_rect)
 
         # 版本信息
-        version = self.font_small.render('Version 2.5.0 - 更多游戏模式', True, GRAY)
-        version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130))
+        version = self.font_small.render('Version 2.7.0 - 游戏体验增强', True, GRAY)
+        version_rect = version.get_rect(center=(SCREEN_WIDTH // 2, 130 + int(self.title_y_offset)))
         self.screen.blit(version, version_rect)
 
         # 菜单选项
@@ -2801,11 +3356,18 @@ class GameMenu:
             y = 200 + i * 80
             is_selected = (i == self.selected_mode)
 
-            # 选项背景
+            # v2.7.0: 选中项背景辉光效果
             if is_selected:
-                pygame.draw.rect(self.screen, (50, 50, 80), (SCREEN_WIDTH // 2 - 200, y - 30, 400, 60))
+                # 多层辉光
+                for offset in range(3, 0, -1):
+                    glow_alpha = 30 + offset * 10
+                    glow_rect = pygame.Rect(SCREEN_WIDTH // 2 - 210, y - 35 - offset, 420, 70 + offset * 2)
+                    glow_surface = pygame.Surface((420, 70 + offset * 2), pygame.SRCALPHA)
+                    pygame.draw.rect(glow_surface, (*self.current_theme['accent_color'], glow_alpha), glow_surface.get_rect(), border_radius=8)
+                    self.screen.blit(glow_surface, (SCREEN_WIDTH // 2 - 210, y - 35 - offset))
+                pygame.draw.rect(self.screen, (50, 50, 80), (SCREEN_WIDTH // 2 - 200, y - 30, 400, 60), border_radius=5)
 
-            # 选项文字
+            # 选项文字 (带缩放效果)
             color = self.current_theme['accent_color'] if is_selected else WHITE
             text = self.font_medium.render(name, True, color)
             text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, y))
@@ -2827,6 +3389,28 @@ class GameMenu:
 
         pygame.display.flip()
 
+    def _draw_bg_particles(self):
+        """绘制背景粒子 - v2.7.0 新增"""
+        for particle in self.bg_particles:
+            # 绘制发光粒子
+            for radius in range(int(particle['size']), 0, -1):
+                alpha = particle['alpha'] // (particle['size'] + 1) * radius
+                s = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+                pygame.draw.circle(s, (*self.current_theme['accent_color'], alpha), (radius * 2, radius * 2), radius)
+                self.screen.blit(s, (int(particle['x'] - radius * 2), int(particle['y'] - radius * 2)))
+
+    def _update_bg_particles(self):
+        """更新背景粒子 - v2.7.0 新增"""
+        for particle in self.bg_particles:
+            particle['x'] += particle['vx']
+            particle['y'] += particle['vy']
+
+            # 边界检查
+            if particle['x'] < 0 or particle['x'] > SCREEN_WIDTH:
+                particle['vx'] *= -1
+            if particle['y'] < 0 or particle['y'] > SCREEN_HEIGHT:
+                particle['vy'] *= -1
+
     def draw_single_player_menu(self):
         """绘制单人游戏模式选择菜单"""
         self.screen.fill(self.current_theme['bg_color'])
@@ -2846,6 +3430,7 @@ class GameMenu:
             ('zen', '禅模式', '无压力，放松体验'),
             ('challenge', '挑战模式', '特殊规则挑战'),
             ('custom', '自定义模式', '自定义游戏规则'),
+            ('daily', '每日挑战', '每天特殊的挑战任务'),
         ]
 
         for i, (mode_key, name, desc) in enumerate(mode_items):
@@ -2912,19 +3497,21 @@ class GameMenu:
                     self.selected_mode = 0
                     return 'main_menu'
                 elif event.key == pygame.K_UP:
-                    self.selected_mode = (self.selected_mode - 1) % 8
+                    self.selected_mode = (self.selected_mode - 1) % 9
                 elif event.key == pygame.K_DOWN:
-                    self.selected_mode = (self.selected_mode + 1) % 8
+                    self.selected_mode = (self.selected_mode + 1) % 9
                 elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    modes = ['classic', 'endless', 'sprint', 'ultra', 'master', 'zen', 'challenge', 'custom']
+                    modes = ['classic', 'endless', 'sprint', 'ultra', 'master', 'zen', 'challenge', 'custom', 'daily']
                     return modes[self.selected_mode]
 
         return 'single_menu'
 
     def run(self):
-        """运行菜单循环"""
+        """运行菜单循环 - v2.7.0 增强动画"""
         while self.running:
             if self.menu_state == 'main':
+                self._update_bg_particles()
+                self.menu_ticks += 1
                 self.draw_main_menu()
                 result = self.handle_main_menu_events()
             elif self.menu_state == 'single':
@@ -2936,6 +3523,8 @@ class GameMenu:
             if result and result not in ('menu', 'main_menu', 'single_menu'):
                 return result
 
+            self.clock.tick(60)  # v2.7.0: 固定帧率
+
         pygame.quit()
         return None
 
@@ -2946,7 +3535,7 @@ def main():
     menu = GameMenu()
     mode = menu.run()
 
-    if mode in ('classic', 'endless', 'sprint', 'ultra', 'master', 'zen', 'challenge', 'custom'):
+    if mode in ('classic', 'endless', 'sprint', 'ultra', 'master', 'zen', 'challenge', 'custom', 'daily'):
         # 单人游戏模式
         game = TetrisGame(mode=mode)
         game.run()
