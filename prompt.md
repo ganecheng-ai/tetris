@@ -11,6 +11,7 @@
 - 使用迭代开发模式持续发布新版本
 - 检查GitHub Actions中最新workflow的报错并进行修复
 - 仓库的详细介绍持续更新到README.md文件
+- 代码质量高于一切, 稳定性、易用性、可用性、用户体验的改进高于新功能的添加
 
 # 版本发布要求
 在创建 Git Tag (例如 v*) 时自动通过GitHub Actions构建项目并发布 GitHub Release。
@@ -26,3 +27,7 @@
    - **Linux**: `.tar.gz` (通用), `.deb` (Debian/Ubuntu), 或 `.AppImage`
    - **macOS**: `.dmg` (磁盘镜像) 或 `.tar.gz` (包含 .app)
    - **通用**: 请同时生成一个 `checksums.txt` 文件包含所有文件的 SHA256 哈希值。
+
+# 待修复问题清单
+以下issue如果还是opened状态, 需要在修复之后关闭, 及时发布新版本, 在issue里回复用户哪个版本可以验证是否修复成功. 不在下面清单中的issue可以忽略不用修复.
+- https://github.com/ganecheng-ai/tetris/issues/1
