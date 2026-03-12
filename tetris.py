@@ -2,7 +2,7 @@
 俄罗斯方块游戏 - Tetris Game
 A classic Tetris game with 10 levels and Chinese interface
 
-Version: 3.0.0
+Version: 3.0.1
 Features:
   - 10 levels with increasing difficulty
   - Chinese interface
@@ -28,6 +28,7 @@ Features:
   - Sound pack system and theme expansion (v2.8.0)
   - Bug fixes: Fix white screen issue on Windows (v2.9.0)
   - Code maintenance and improvements (v3.0.0)
+  - Bug fix: Fix game startup freeze issue - music playlist now loads on-demand (v3.0.1)
 """
 
 import pygame
@@ -1077,6 +1078,7 @@ class SoundManager:
         self.music_playing = False
         self.current_music_index = 0
         self.music_playlist = []
+        self._music_initializing = False  # 标记音乐是否正在初始化
 
         # 独立音量控制
         self.sound_volume = SOUND_VOLUME
@@ -1090,9 +1092,14 @@ class SoundManager:
         self._load_volume_settings()
 
         if self.enabled:
-            pygame.mixer.init()
-            self._init_sounds()
-            self._init_music_playlist()
+            try:
+                pygame.mixer.init()
+                self._init_sounds()
+                # v3.0.1: 延迟加载音乐，避免启动时阻塞
+                # self._init_music_playlist()
+            except Exception as e:
+                print(f"初始化音频失败：{e}")
+                self.enabled = False
 
     def _load_sound_pack_settings(self):
         """加载音效包设置 - v2.8.0 新增"""
@@ -1283,6 +1290,9 @@ class SoundManager:
 
     def _init_music_playlist(self):
         """初始化背景音乐播放列表 - v2.7.0 增强版，更多曲目"""
+        if self._music_initializing:
+            return  # 防止重复初始化
+        self._music_initializing = True
         try:
             # 生成多首背景音乐（v2.7.0: 从 4 首增加到 8 首）
             self.music_playlist = []
@@ -1293,6 +1303,13 @@ class SoundManager:
         except Exception as e:
             print(f"初始化音乐播放列表失败：{e}")
             self.music_loaded = False
+        finally:
+            self._music_initializing = False
+
+    def _ensure_music_loaded(self):
+        """确保音乐已加载 - v3.0.1 新增"""
+        if not self.music_loaded and not self._music_initializing:
+            self._init_music_playlist()
 
     def _init_sounds(self):
         """初始化音效（使用程序生成的声音）- v2.8.0 支持音效包"""
@@ -1409,7 +1426,11 @@ class SoundManager:
 
     def play_music(self):
         """播放背景音乐"""
-        if self.enabled and self.music_loaded and self.music_playlist:
+        if not self.enabled:
+            return
+        # v3.0.1: 确保音乐已加载（延迟加载）
+        self._ensure_music_loaded()
+        if self.music_loaded and self.music_playlist:
             try:
                 # 加载当前音乐轨道
                 track_data = self.music_playlist[self.current_music_index]
